@@ -1,0 +1,6 @@
+options:
+  snap_channel:
+    type: string
+    default: latest/stable
+    description: |
+      The snap store channel for LXD to use

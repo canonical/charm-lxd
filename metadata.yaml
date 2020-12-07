@@ -1,0 +1,10 @@
+name: lxd
+summary: LXD charm
+maintainers:
+- Simon Fels <simon.fels@canonical.com>
+description: |
+  Charm for LXD, the next generation system container manager
+tags:
+- misc
+subordinated: false
+series: [bionic, focal]
