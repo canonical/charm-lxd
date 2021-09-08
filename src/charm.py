@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-#
-# (c) 2020 Canonical Ltd. All right reservered
+
+"""LXD charm."""
+
+# (c) 2020-2021 Canonical Ltd. All right reservered
+# See LICENSE file for licensing details.
 #
 
 from ops.charm import CharmBase
