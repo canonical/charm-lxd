@@ -1,0 +1,7 @@
+venv/
+build/
+*.charm
+.vscode/
+
+__pycache__/
+*.py[cod]
