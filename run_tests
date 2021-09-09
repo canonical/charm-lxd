@@ -1,7 +1,4 @@
 #!/bin/sh -e
-# (c) 2021 Canonical Ltd. All right reservered
-# See LICENSE file for licensing details.
-
 if [ -z "$VIRTUAL_ENV" -a -d venv/ ]; then
     . venv/bin/activate
 fi

@@ -1,6 +1,46 @@
 options:
-  snap_channel:
+  lxd-preseed:
     type: string
-    default: latest/stable
-    description: |
-      The snap store channel for LXD to use
+    description: Pass a YAML configuration to `lxd init` on initial start
+
+  snap-channel:
+    type: string
+    default: "latest/stable"
+    description: The snap store channel for LXD to use
+
+  snap-config-ceph-builtin:
+    type: boolean
+    description: Use snap-specific ceph configuration
+  snap-config-ceph-external:
+    type: boolean
+    description: Use the system's ceph tools (ignores snap-config-ceph-builtin)
+  snap-config-criu-enable:
+    type: boolean
+    description: Enable experimental live-migration support
+  snap-config-daemon-debug:
+    type: boolean
+    description: Increase logging to debug level
+  snap-config-daemon-group:
+    type: string
+    description: Set group of users that can interact with LXD
+  snap-config-daemon-syslog:
+    type: boolean
+    description: Send LXD log events to syslog
+  snap-config-lvm-external:
+    type: boolean
+    description: Use the system's LVM tools
+  snap-config-lxcfs-pidfd:
+    type: boolean
+    description: Start per-container process tracking
+  snap-config-lxcfs-loadavg:
+    type: boolean
+    description: Start tracking per-container load average
+  snap-config-lxcfs-cfs:
+    type: boolean
+    description: Consider CPU shares for CPU usage
+  snap-config-openvswitch-builtin:
+    type: boolean
+    description: Run a snap-specific OVS daemon
+  snap-config-shiftfs-enable:
+    type: string
+    description: Enable shiftfs support
