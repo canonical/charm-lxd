@@ -1,0 +1,12 @@
+#!/bin/sh -e
+if [ -z "$VIRTUAL_ENV" -a -d venv/ ]; then
+    . venv/bin/activate
+fi
+
+if [ -z "$PYTHONPATH" ]; then
+    export PYTHONPATH="lib:src"
+else
+    export PYTHONPATH="lib:src:$PYTHONPATH"
+fi
+
+flake8

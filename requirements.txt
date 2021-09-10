@@ -1,1 +1,2 @@
-ops
+charmhelpers
+ops >= 1.2.0
