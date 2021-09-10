@@ -22,6 +22,25 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
+SYSCTL_CONFIGS = {
+    'fs.aio-max-nr': 524288,
+    'fs.inotify.max_queued_events': 1048576,
+    'fs.inotify.max_user_instances': 1048576,
+    'fs.inotify.max_user_watches': 1048576,
+    'kernel.dmesg_restrict': 1,
+    'kernel.keys.maxbytes': 2000000,
+    'kernel.keys.maxkeys': 2000,
+    'net.core.bpf_jit_limit': 3000000000,
+    'net.ipv4.neigh.default.gc_thresh3': 8192,
+    'net.ipv6.neigh.default.gc_thresh3': 8192,
+    'vm.max_map_count': 262144,
+}
+
+SYSTEMD_TMPFILES_CONFIGS = [
+    'z /proc/sched_debug 0400 - - -',
+    'z /sys/kernel/slab  0700 - - -',
+]
+
 REBOOT_REQUIRED_FILE = '/run/lxd-reboot-required'
 
 
@@ -67,6 +86,8 @@ class LxdCharm(CharmBase):
 
         # Apply various configs
         self.snap_config_set()
+        self.kernel_sysctl()
+        self.kernel_hardening()
 
         # Initial configuration
         try:
@@ -113,6 +134,10 @@ class LxdCharm(CharmBase):
         try:
             if "snap-channel" in changed:
                 self.snap_install_lxd()
+            elif "sysctl-tuning" in changed:
+                self.kernel_sysctl()
+            elif "kernel-hardening" in changed:
+                self.kernel_hardening()
             elif [k for k in changed if k.startswith("snap-config-")]:
                 self.snap_config_set()
         except RuntimeError:
@@ -250,6 +275,54 @@ class LxdCharm(CharmBase):
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
             raise RuntimeError
+
+    def kernel_sysctl(self) -> None:
+        """Apply sysctl tuning keys."""
+        logger.debug("Applying sysctl tuning")
+        sysctl_file = "/etc/sysctl.d/60-lxd.conf"
+        config = self.config['sysctl-tuning']
+
+        if config:
+            self.unit_maintenance(f"Applying sysctl config file: {sysctl_file}")
+            with open(sysctl_file, 'w', encoding="UTF-8") as f:
+                for k, v in SYSCTL_CONFIGS.items():
+                    f.write(f'{k} = {v}\n')
+
+            try:
+                subprocess.run(["sysctl", "--quiet", "--load", sysctl_file], check=True)
+            except subprocess.CalledProcessError as e:
+                self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+                raise RuntimeError
+
+        elif os.path.exists(sysctl_file):
+            self.unit_maintenance(f"Removing sysctl config file: {sysctl_file}")
+            os.remove(sysctl_file)
+
+        # Persist the configuration
+        self._stored.config['sysctl-tuning'] = config
+
+    def kernel_hardening(self) -> None:
+        """Apply kernel hardening systemd tmpfiles."""
+        logger.debug("Applying kernel hardening")
+        systemd_tmpfiles = "/etc/tmpfiles.d/lxd.conf"
+        config = self.config['kernel-hardening']
+
+        if config:
+            self.unit_maintenance(f"Applying kernel hardening config file: {systemd_tmpfiles}")
+            with open(systemd_tmpfiles, 'w', encoding="UTF-8") as f:
+                f.write("\n".join(SYSTEMD_TMPFILES_CONFIGS) + "\n")
+            try:
+                subprocess.run(["systemd-tmpfiles", "--create"], check=True)
+            except subprocess.CalledProcessError as e:
+                self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+                raise RuntimeError
+
+        elif os.path.exists(systemd_tmpfiles):
+            self.unit_maintenance(f"Removing kernel hardening config file: {systemd_tmpfiles}")
+            os.remove(systemd_tmpfiles)
+
+        # Persist the configuration
+        self._stored.config['kernel-hardening'] = config
 
     def lxd_init(self) -> None:
         """Apply initial configuration of LXD."""

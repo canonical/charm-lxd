@@ -1,4 +1,9 @@
 options:
+  kernel-hardening:
+    type: boolean
+    default: true
+    description: Restrict access to sensitive files/dirs (/proc/sched_debug, /sys/kernel/slab)
+
   lxd-preseed:
     type: string
     description: Pass a YAML configuration to `lxd init` on initial start
@@ -44,3 +49,8 @@ options:
   snap-config-shiftfs-enable:
     type: string
     description: Enable shiftfs support
+
+  sysctl-tuning:
+    type: boolean
+    default: true
+    description: Apply production sysctl tuning
