@@ -1,10 +1,15 @@
 name: lxd
-summary: LXD charm
+summary: A next generation system container and virtual machine manager
 maintainers:
   - Simon Deziel <simon.deziel@canonical.com>
-description: A next generation system container and virtual machine manager
-series:
-  - focal
+description: |
+  LXD is a next generation system container and virtual machine manager.
+  It offers a unified user experience around full Linux systems running
+  inside containers or virtual machines.
+tags:
+  - containers
+  - security
+  - system
 storage:
   local:
     type: block
