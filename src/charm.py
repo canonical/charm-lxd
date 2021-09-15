@@ -5,8 +5,16 @@
 import logging
 import os
 import subprocess
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
-from ops.charm import CharmBase, ConfigChangedEvent, InstallEvent, StartEvent
+from ops.charm import (
+    ActionEvent,
+    CharmBase,
+    ConfigChangedEvent,
+    InstallEvent,
+    StartEvent,
+)
 from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
@@ -53,11 +61,103 @@ class LxdCharm(CharmBase):
             reboot_required=False,
         )
 
+        # Action event handlers
+        self.framework.observe(
+            self.on.add_trusted_client_action, self._on_action_add_trusted_client
+        )
+        self.framework.observe(self.on.debug_action, self._on_action_debug)
+        self.framework.observe(
+            self.on.show_pending_config_action, self._on_action_show_pending_config
+        )
+
         # Main event handlers
         self.framework.observe(self.on.install, self._on_charm_install)
         self.framework.observe(self.on.config_changed, self._on_charm_config_changed)
         self.framework.observe(self.on.start, self._on_charm_start)
         self.framework.observe(self.on.upgrade_charm, self._on_charm_upgrade)
+
+    def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
+        """Add a client certificate to the trusted list."""
+        name = event.params.get("name", "unknown")
+        cert = event.params.get("cert")
+        cert_url = event.params.get("cert-url")
+        projects = event.params.get("projects")
+
+        if not cert and not cert_url:
+            msg = "One of cert or cert-url parameter needs to be provided."
+            event.fail(msg)
+            logger.error(msg)
+            return
+
+        if cert:
+            # The received PEM needs to be mangled to be able to split()
+            # on spaces without breaking the "-----BEGIN CERTIFICATE-----"
+            # and "-----END CERTIFICATE-----" lines
+            cert = (
+                "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split())
+                .replace("CERTIFICATE", " CERTIFICATE", 2)
+                .encode()
+            )
+            # Ignore the cert-url param if a cert was provided
+            cert_url = None
+
+        if cert_url and not (cert_url.startswith("http://") or cert_url.startswith("https://")):
+            msg = 'The cert-url parameter needs to start with "http://" or "https://".'
+            event.fail(msg)
+            logger.error(msg)
+            return
+
+        if cert_url:
+            try:
+                response = urlopen(cert_url)
+            except HTTPError as e:
+                msg = f"The server couldn't fulfill the request. Error code: {e.code}"
+                event.fail(msg)
+                logger.error(msg)
+                return
+            except URLError as e:
+                msg = f"We failed to reach a server. Reason: {e.reason}"
+                event.fail(msg)
+                logger.error(msg)
+                return
+            else:
+                cert = response.read()
+
+        if not cert:
+            msg = "Invalid/empty certificate provided/retrieved."
+            event.fail(msg)
+            logger.error(msg)
+            return
+
+        cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
+        if projects:
+            cmd += ["--restricted", "--projects", projects]
+        try:
+            subprocess.run(cmd, input=cert, check=True)
+        except subprocess.CalledProcessError as e:
+            msg = f'Failed to run "{e.cmd}": {e.returncode}'
+            event.fail(msg)
+            logger.error(msg)
+            raise RuntimeError
+
+        event.set_results({"result": "the client certificate is now trusted"})
+
+    def _on_action_debug(self, event: ActionEvent) -> None:
+        """Collect information for a bug report."""
+        try:
+            b = subprocess.run(["lxd.buginfo"], check=True)
+        except subprocess.CalledProcessError as e:
+            msg = f'Failed to run "{e.cmd}": {e.returncode}'
+            event.fail(msg)
+            logger.error(msg)
+            raise RuntimeError
+
+        event.set_results({"buginfo": b.stdout})
+        logger.debug("lxd.buginfo called successfully")
+
+    def _on_action_show_pending_config(self, event: ActionEvent) -> None:
+        """Show the currently pending configuration changes (queued for after the reboot)."""
+        event.set_results({"pending": self.config_changed()})
 
     def _on_charm_install(self, event: InstallEvent) -> None:
         logger.info("Installing the LXD charm")
