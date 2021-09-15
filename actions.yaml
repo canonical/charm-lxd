@@ -1,0 +1,27 @@
+add-trusted-client:
+  description: The client certificate to add to the trusted list
+  params:
+    name:
+      description: The user-specified identifier (optional)
+      type: string
+    cert:
+      description: |
+        The raw X.509 PEM client certificate (required if cert-url isn't set).
+        -----BEGIN CERTIFICATE-----
+        <Client cert in PEM format to add to trust>
+        -----END CERTIFICATE-----
+        Pass the file with the certificate above as:
+        $ juju run-action lxd/leader add-trusted-client cert="$(cat client.crt)"
+      type: string
+    cert-url:
+      description: The HTTP/HTTPS URL to fetch the client certificate from (required if cert isn’t set)
+      type: string
+    projects:
+      description: A comma separated list of projects to restrict the client certificate to (optional)
+      type: string
+
+debug:
+  description: Collect useful information for bug reports (calls lxd.buginfo)
+
+show-pending-config:
+  description: Show the currently pending configuration changes (queued for after the reboot)
