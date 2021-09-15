@@ -1,0 +1,35 @@
+name: charmcraft
+
+on:
+  - push
+  - pull_request
+
+jobs:
+  charmcraft:
+    name: Build charm
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        set -eux
+        sudo snap install charmcraft --classic
+
+    - name: Init LXD
+      run: |
+        set -eux
+        sudo adduser "$USER" lxd
+        sudo -g lxd lxd init --auto
+
+    - name: Build charm
+      run: |
+        set -eux
+        sudo -g lxd charmcraft build
+
+    - name: Upload charm
+      uses: actions/upload-artifact@v2
+      with:
+        name: lxd_ubuntu-20.04-amd64.charm
+        path: lxd_ubuntu-20.04-amd64.charm
