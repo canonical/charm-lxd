@@ -2,6 +2,7 @@ venv/
 build/
 *.charm
 .vscode/
+.tox/
 
 __pycache__/
 *.py[cod]

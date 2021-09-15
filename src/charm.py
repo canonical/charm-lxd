@@ -2,46 +2,37 @@
 
 """LXD charm."""
 
-from ops.charm import (
-    CharmBase,
-    ConfigChangedEvent,
-    InstallEvent,
-    StartEvent,
-)
-from ops.framework import StoredState
-from ops.main import main
-from ops.model import (
-    ActiveStatus,
-    BlockedStatus,
-    MaintenanceStatus,
-)
-
 import logging
 import os
 import subprocess
 
+from ops.charm import CharmBase, ConfigChangedEvent, InstallEvent, StartEvent
+from ops.framework import StoredState
+from ops.main import main
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+
 logger = logging.getLogger(__name__)
 
 SYSCTL_CONFIGS = {
-    'fs.aio-max-nr': 524288,
-    'fs.inotify.max_queued_events': 1048576,
-    'fs.inotify.max_user_instances': 1048576,
-    'fs.inotify.max_user_watches': 1048576,
-    'kernel.dmesg_restrict': 1,
-    'kernel.keys.maxbytes': 2000000,
-    'kernel.keys.maxkeys': 2000,
-    'net.core.bpf_jit_limit': 3000000000,
-    'net.ipv4.neigh.default.gc_thresh3': 8192,
-    'net.ipv6.neigh.default.gc_thresh3': 8192,
-    'vm.max_map_count': 262144,
+    "fs.aio-max-nr": 524288,
+    "fs.inotify.max_queued_events": 1048576,
+    "fs.inotify.max_user_instances": 1048576,
+    "fs.inotify.max_user_watches": 1048576,
+    "kernel.dmesg_restrict": 1,
+    "kernel.keys.maxbytes": 2000000,
+    "kernel.keys.maxkeys": 2000,
+    "net.core.bpf_jit_limit": 3000000000,
+    "net.ipv4.neigh.default.gc_thresh3": 8192,
+    "net.ipv6.neigh.default.gc_thresh3": 8192,
+    "vm.max_map_count": 262144,
 }
 
 SYSTEMD_TMPFILES_CONFIGS = [
-    'z /proc/sched_debug 0400 - - -',
-    'z /sys/kernel/slab  0700 - - -',
+    "z /proc/sched_debug 0400 - - -",
+    "z /sys/kernel/slab  0700 - - -",
 ]
 
-REBOOT_REQUIRED_FILE = '/run/lxd-reboot-required'
+REBOOT_REQUIRED_FILE = "/run/lxd-reboot-required"
 
 
 class LxdCharm(CharmBase):
@@ -188,8 +179,10 @@ class LxdCharm(CharmBase):
         changed = self.config_changed()
         for k, v in changed.items():
             if k.startswith("lxd-"):
-                logger.warning(f"The new \"{k}\" key won't be applied to existing units "
-                               "as their LXD is already initialized")
+                logger.warning(
+                    f'The new "{k}" key won\'t be applied to existing units '
+                    "as their LXD is already initialized"
+                )
                 self._stored.config[k] = v
 
     def config_changed(self) -> dict:
@@ -207,7 +200,7 @@ class LxdCharm(CharmBase):
 
     def config_is_valid(self) -> bool:
         """Validate the config."""
-        if "local" in self.model.storages and len(self.model.storages['local']) > 1:
+        if "local" in self.model.storages and len(self.model.storages["local"]) > 1:
             self.unit_blocked("LXD charm only supports a single storage volume")
             return False
 
@@ -215,8 +208,11 @@ class LxdCharm(CharmBase):
 
         # If nothing changed and we were blocked due to a lxd- key
         # change (post-init), we can assume the change was reverted thus unblocking us
-        if not config_changed and isinstance(self.unit.status, BlockedStatus) and \
-                "Can't modify lxd- keys after initialization:" in str(self.unit.status):
+        if (
+            not config_changed
+            and isinstance(self.unit.status, BlockedStatus)
+            and "Can't modify lxd- keys after initialization:" in str(self.unit.status)
+        ):
             self.unit_active("Unblocking as the lxd- keys were reset to their initial values")
 
         for k in config_changed:
@@ -260,38 +256,41 @@ class LxdCharm(CharmBase):
         try:
             if http_proxy:
                 logger.debug(f"Configuring core.proxy_http={http_proxy}")
-                subprocess.run(["lxc", "config", "set", "core.proxy_http",
-                               http_proxy], check=True)
+                subprocess.run(["lxc", "config", "set", "core.proxy_http", http_proxy], check=True)
 
             if https_proxy:
                 logger.debug(f"Configuring core.proxy_https={https_proxy}")
-                subprocess.run(["lxc", "config", "set", "core.proxy_https",
-                               https_proxy], check=True)
+                subprocess.run(
+                    ["lxc", "config", "set", "core.proxy_https", https_proxy],
+                    check=True,
+                )
             if no_proxy:
                 logger.debug(f"Configuring core.proxy_ignore_hosts={no_proxy}")
-                subprocess.run(["lxc", "config", "set", "core.proxy_ignore_hosts",
-                               no_proxy], check=True)
+                subprocess.run(
+                    ["lxc", "config", "set", "core.proxy_ignore_hosts", no_proxy],
+                    check=True,
+                )
 
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
             raise RuntimeError
 
     def kernel_sysctl(self) -> None:
         """Apply sysctl tuning keys."""
         logger.debug("Applying sysctl tuning")
         sysctl_file = "/etc/sysctl.d/60-lxd.conf"
-        config = self.config['sysctl-tuning']
+        config = self.config["sysctl-tuning"]
 
         if config:
             self.unit_maintenance(f"Applying sysctl config file: {sysctl_file}")
-            with open(sysctl_file, 'w', encoding="UTF-8") as f:
+            with open(sysctl_file, "w", encoding="UTF-8") as f:
                 for k, v in SYSCTL_CONFIGS.items():
-                    f.write(f'{k} = {v}\n')
+                    f.write(f"{k} = {v}\n")
 
             try:
                 subprocess.run(["sysctl", "--quiet", "--load", sysctl_file], check=True)
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
                 raise RuntimeError
 
         elif os.path.exists(sysctl_file):
@@ -299,22 +298,22 @@ class LxdCharm(CharmBase):
             os.remove(sysctl_file)
 
         # Persist the configuration
-        self._stored.config['sysctl-tuning'] = config
+        self._stored.config["sysctl-tuning"] = config
 
     def kernel_hardening(self) -> None:
         """Apply kernel hardening systemd tmpfiles."""
         logger.debug("Applying kernel hardening")
         systemd_tmpfiles = "/etc/tmpfiles.d/lxd.conf"
-        config = self.config['kernel-hardening']
+        config = self.config["kernel-hardening"]
 
         if config:
             self.unit_maintenance(f"Applying kernel hardening config file: {systemd_tmpfiles}")
-            with open(systemd_tmpfiles, 'w', encoding="UTF-8") as f:
+            with open(systemd_tmpfiles, "w", encoding="UTF-8") as f:
                 f.write("\n".join(SYSTEMD_TMPFILES_CONFIGS) + "\n")
             try:
                 subprocess.run(["systemd-tmpfiles", "--create"], check=True)
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
                 raise RuntimeError
 
         elif os.path.exists(systemd_tmpfiles):
@@ -322,7 +321,7 @@ class LxdCharm(CharmBase):
             os.remove(systemd_tmpfiles)
 
         # Persist the configuration
-        self._stored.config['kernel-hardening'] = config
+        self._stored.config["kernel-hardening"] = config
 
     def lxd_init(self) -> None:
         """Apply initial configuration of LXD."""
@@ -337,41 +336,64 @@ class LxdCharm(CharmBase):
                 # NOTE: When preseeding, no further configuration is applied.
                 subprocess.run(["lxd", "init", "--preseed"], check=True, input=preseed.encode())
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
                 raise RuntimeError
         else:
             self.unit_maintenance("Performing initial configuration")
 
             try:
                 # Configure the storage
-                if "local" in self.model.storages and len(self.model.storages['local']) == 1:
+                if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
                     src = f"source={self.model.storages['local'][0].location}"
                     self.unit_maintenance(f"Configuring external storage pool (zfs, {src})")
-                    subprocess.run(["lxc", "storage", "create", "local", "zfs", src],
-                                   check=True)
+                    subprocess.run(["lxc", "storage", "create", "local", "zfs", src], check=True)
                 else:
                     self.unit_maintenance("Configuring local storage pool (dir)")
                     subprocess.run(["lxc", "storage", "create", "local", "dir"], check=True)
-                subprocess.run(["lxc", "profile", "device", "add",
-                                "default", "root", "disk", "pool=local", "path=/"], check=True)
+                subprocess.run(
+                    [
+                        "lxc",
+                        "profile",
+                        "device",
+                        "add",
+                        "default",
+                        "root",
+                        "disk",
+                        "pool=local",
+                        "path=/",
+                    ],
+                    check=True,
+                )
 
                 # Configure the network
                 self.unit_maintenance("Configuring network bridge (lxdbr0)")
 
                 subprocess.run(["lxc", "network", "create", "lxdbr0"], check=True)
 
-                subprocess.run(["lxc", "profile", "device", "add", "default", "eth0", "nic",
-                                "network=lxdbr0", "name=eth0"], check=True)
+                subprocess.run(
+                    [
+                        "lxc",
+                        "profile",
+                        "device",
+                        "add",
+                        "default",
+                        "eth0",
+                        "nic",
+                        "network=lxdbr0",
+                        "name=eth0",
+                    ],
+                    check=True,
+                )
 
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
                 raise RuntimeError
 
         # Initial configuration of core.proxy_* keys
         self.juju_set_proxy()
 
         # Done with the initialization
-        self._stored.config['lxd-preseed'] = preseed
+        self._stored.config["lxd-preseed"] = preseed
 
         # Flag any `lxd-*` keys not handled, there should be none
         for k in self.config_changed():
@@ -380,8 +402,10 @@ class LxdCharm(CharmBase):
 
     def lxd_is_active(self) -> bool:
         """Indicate if the lxd daemon is active."""
-        c = subprocess.run(["systemctl", "is-active", "--quiet", "snap.lxd.daemon.service"],
-                           check=False)
+        c = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "snap.lxd.daemon.service"],
+            check=False,
+        )
         return c.returncode == 0
 
     def lxd_reload(self) -> None:
@@ -392,8 +416,9 @@ class LxdCharm(CharmBase):
             subprocess.run(["lxd", "waitready", "--timeout=30"], check=False)
             # Start a monitor process and wait for it to exit due to the service
             # reloading and the old lxd process closing the monitor's socket.
-            mon = subprocess.Popen(["lxc", "monitor", "--type=nonexistent"],
-                                   stderr=subprocess.DEVNULL)
+            mon = subprocess.Popen(
+                ["lxc", "monitor", "--type=nonexistent"], stderr=subprocess.DEVNULL
+            )
             subprocess.run(["systemctl", "reload", "snap.lxd.daemon.service"], check=True)
             mon.wait(timeout=600)
 
@@ -404,7 +429,7 @@ class LxdCharm(CharmBase):
             raise RuntimeError
 
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
             raise RuntimeError
 
     def snap_config_set(self) -> None:
@@ -444,7 +469,7 @@ class LxdCharm(CharmBase):
         try:
             subprocess.run(["snap", "set", "lxd"] + snap_set_list, check=True)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
             raise RuntimeError
 
         # If "snap set lxd" was successful: save all the k/v applied
@@ -461,7 +486,7 @@ class LxdCharm(CharmBase):
 
     def snap_install_lxd(self) -> None:
         """Install LXD from snap."""
-        channel = self.config['snap-channel']
+        channel = self.config["snap-channel"]
         if channel:
             channel_name = channel
         else:
@@ -474,11 +499,11 @@ class LxdCharm(CharmBase):
             if os.path.exists("/var/lib/lxd"):
                 subprocess.run(["lxd.migrate", "-yes"], check=True)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f"Failed to run \"{e.cmd}\": {e.returncode}")
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
             raise RuntimeError
 
         # Done with the snap installation
-        self._stored.config['snap-channel'] = channel
+        self._stored.config["snap-channel"] = channel
 
     def system_clear_reboot_required(self) -> None:
         """Clear the reboot_required flag if a reboot occurred."""
@@ -491,7 +516,7 @@ class LxdCharm(CharmBase):
         """Indicate that a reboot is required to reach a clean state."""
         # Touch a flag file indicating that a reboot is required.
         try:
-            open(REBOOT_REQUIRED_FILE, 'a').close()
+            open(REBOOT_REQUIRED_FILE, "a").close()
             self._stored.reboot_required = True
         except OSError:
             logger.warning(f"Failed to create: {REBOOT_REQUIRED_FILE}")
