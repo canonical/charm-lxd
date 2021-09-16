@@ -4,7 +4,10 @@
 
 import logging
 import os
+import shutil
 import subprocess
+import tarfile
+import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -17,7 +20,7 @@ from ops.charm import (
 )
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +59,10 @@ class LxdCharm(CharmBase):
         self._stored.set_default(
             addresses={},
             config={},
+            lxd_binary_path=None,
             lxd_initialized=False,
             lxd_installed=False,
+            lxd_snap_path=None,
             reboot_required=False,
         )
 
@@ -190,6 +195,9 @@ class LxdCharm(CharmBase):
             event.defer()
             return
 
+        # Apply sideloaded resources attached at deploy time
+        self.resource_sideload()
+
         # All done
         self.unit_active()
 
@@ -284,6 +292,9 @@ class LxdCharm(CharmBase):
                     "as their LXD is already initialized"
                 )
                 self._stored.config[k] = v
+
+        # Apply sideloaded resources attached after deployment
+        self.resource_sideload()
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
@@ -532,6 +543,77 @@ class LxdCharm(CharmBase):
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
             raise RuntimeError
 
+    def resource_sideload(self) -> None:
+        """Sideload resources."""
+        # Multi-arch support
+        arch = os.uname().machine
+        if arch == "x86_64":
+            possible_archs = ["x86_64", "amd64"]
+        else:
+            possible_archs = [arch]
+
+        # LXD snap
+        lxd_snap_resource = None
+        fname_suffix = ".snap"
+        try:
+            # Note: self._stored can only store simple data types (int/float/dict/list/etc)
+            lxd_snap_resource = str(self.model.resources.fetch("lxd-snap"))
+        except ModelError:
+            pass
+
+        tmp_dir = None
+        if lxd_snap_resource and tarfile.is_tarfile(lxd_snap_resource):
+            logger.debug(f"{lxd_snap_resource} is a tarball; unpacking")
+            tmp_dir = tempfile.mkdtemp()
+            tarball = tarfile.open(lxd_snap_resource)
+            valid_names = {f"lxd_{x}{fname_suffix}" for x in possible_archs}
+            for f in valid_names.intersection(tarball.getnames()):
+                tarball.extract(f, path=tmp_dir)
+                logger.debug(f"{f} was extracted from the tarball")
+                self._stored.lxd_snap_path = f"{tmp_dir}/{f}"
+                break
+            else:
+                logger.debug("Missing arch specific snap from tarball.")
+        else:
+            self._stored.lxd_snap_path = lxd_snap_resource
+
+        if self._stored.lxd_snap_path:
+            self.snap_sideload_lxd()
+            if tmp_dir:
+                os.remove(self._stored.lxd_snap_path)
+                os.rmdir(tmp_dir)
+
+        # LXD binary
+        lxd_binary_resource = None
+        fname_suffix = ""
+        try:
+            # Note: self._stored can only store simple data types (int/float/dict/list/etc)
+            lxd_binary_resource = str(self.model.resources.fetch("lxd-binary"))
+        except ModelError:
+            pass
+
+        tmp_dir = None
+        if lxd_binary_resource and tarfile.is_tarfile(lxd_binary_resource):
+            logger.debug(f"{lxd_binary_resource} is a tarball; unpacking")
+            tmp_dir = tempfile.mkdtemp()
+            tarball = tarfile.open(lxd_binary_resource)
+            valid_names = {f"lxd_{x}{fname_suffix}" for x in possible_archs}
+            for f in valid_names.intersection(tarball.getnames()):
+                tarball.extract(f, path=tmp_dir)
+                logger.debug(f"{f} was extracted from the tarball")
+                self._stored.lxd_binary_path = f"{tmp_dir}/{f}"
+                break
+            else:
+                logger.debug("Missing arch specific binary from tarball.")
+        else:
+            self._stored.lxd_binary_path = lxd_binary_resource
+
+        if self._stored.lxd_binary_path:
+            self.snap_sideload_lxd_binary()
+            if tmp_dir:
+                os.remove(self._stored.lxd_binary_path)
+                os.rmdir(tmp_dir)
+
     def snap_config_set(self) -> None:
         """Apply snap set to LXD."""
         logger.debug("Applying snap set lxd")
@@ -604,6 +686,56 @@ class LxdCharm(CharmBase):
 
         # Done with the snap installation
         self._stored.config["snap-channel"] = channel
+
+    def snap_sideload_lxd(self) -> None:
+        """Sideload LXD snap resource."""
+        logger.debug("Applying LXD snap sideload changes")
+
+        # A 0 byte file will unload the resource
+        if os.path.getsize(self._stored.lxd_snap_path) == 0:
+            logger.debug("Reverting to LXD snap from snapstore")
+            channel = self._stored.config["snap-channel"]
+            cmd = ["snap", "refresh", "lxd", f"--channel={channel}", "--amend"]
+            alias = None
+            enable = None
+        else:
+            logger.debug("Sideloading LXD snap")
+            cmd = ["snap", "install", "--dangerous", self._stored.lxd_snap_path]
+            # Since the sideloaded snap doesn't have an assertion, some things need
+            # to be done manually
+            alias = ["snap", "alias", "lxd.lxc", "lxc"]
+            enable = ["systemctl", "enable", "--now", "snap.lxd.daemon.unix.socket"]
+
+        try:
+            subprocess.run(cmd, check=True)
+            if alias:
+                subprocess.run(alias, check=True)
+            if enable:
+                subprocess.run(enable, check=True)
+        except subprocess.CalledProcessError as e:
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+            raise RuntimeError
+
+    def snap_sideload_lxd_binary(self) -> None:
+        """Sideload LXD binary resource."""
+        logger.debug("Applying LXD binary sideload changes")
+        lxd_debug = "/var/snap/lxd/common/lxd.debug"
+
+        # A 0 byte file will unload the resource
+        if os.path.getsize(self._stored.lxd_binary_path) == 0:
+            logger.debug("Unloading sideloaded LXD binary")
+            if os.path.exists(lxd_debug):
+                os.remove(lxd_debug)
+        else:
+            logger.debug("Sideloading LXD binary")
+            # Avoid "Text file busy" error
+            if os.path.exists(lxd_debug):
+                logger.debug("Removing old sideloaded LXD binary")
+                os.remove(lxd_debug)
+            shutil.copyfile(self._stored.lxd_binary_path, lxd_debug)
+            os.chmod(lxd_debug, 0o755)
+
+        self.lxd_reload()
 
     def system_clear_reboot_required(self) -> None:
         """Clear the reboot_required flag if a reboot occurred."""
