@@ -10,6 +10,25 @@ tags:
   - containers
   - security
   - system
+resources:
+  lxd-binary:
+    type: file
+    filename: lxd
+    description: |
+      A debug version of the LXD binary or a tarball of architecture specific
+      binaries. In the case of a tarball, the binaries should be at the root
+      and be named as "lxd_${ARCH}".
+
+      Attaching an empty file will undo the sideloading.
+  lxd-snap:
+    type: file
+    filename: lxd.snap
+    description: |
+      A custom LXD snap or tarball of architecture specific snaps to install.
+      In the case of a tarball, the snaps should be at the root and be
+      named as "lxd_${ARCH}.snap".
+
+      Attaching an empty file will undo the sideloading.
 storage:
   local:
     type: block
