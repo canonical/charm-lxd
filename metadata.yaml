@@ -36,3 +36,8 @@ storage:
     minimum-size: 10G
     multiple:
       range: 0-1
+provides:
+  bgp:
+    interface: lxd-bgp
+  https:
+    interface: lxd-https

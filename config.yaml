@@ -4,6 +4,16 @@ options:
     default: true
     description: Restrict access to sensitive files/dirs (/proc/sched_debug, /sys/kernel/slab)
 
+  lxd-listen-bgp:
+    type: boolean
+    default: false
+    description: Enable/disable the BGP endpoint
+
+  lxd-listen-https:
+    type: boolean
+    default: false
+    description: Enable/disable the remote API (HTTPS)
+
   lxd-preseed:
     type: string
     description: Pass a YAML configuration to `lxd init` on initial start

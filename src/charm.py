@@ -11,6 +11,7 @@ import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+import pylxd
 from ops.charm import (
     ActionEvent,
     CharmBase,
@@ -23,6 +24,9 @@ from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
 
 logger = logging.getLogger(__name__)
+
+# Reduce verbosity of API calls made by pylxd
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 SYSCTL_CONFIGS = {
     "fs.aio-max-nr": 524288,
@@ -210,6 +214,31 @@ class LxdCharm(CharmBase):
         """
         logger.info("Updating charm config")
 
+        error = False
+
+        # Space binding changes will trigger this event but won't show up in self.config
+        # so those need to be processed even when config_changed() returns nothing
+        for listener in ["bgp", "https"]:
+            # Check if we should listen
+            toggle_key = f"lxd-listen-{listener}"
+            toggle_value = self.config.get(toggle_key)
+            if toggle_value:
+                space_addr = self.juju_space_get_address(listener)
+
+                # Configure a listener or update it if needed
+                if space_addr and space_addr != self._stored.addresses.get(listener):
+                    if not self.lxd_set_address(listener, space_addr):
+                        error = True
+                        continue
+            elif self._stored.addresses.get(listener):
+                # Turn off the existing listener
+                if not self.lxd_set_address(listener, ""):
+                    error = True
+                    continue
+
+            # Save the `lxd-listen-<listener>` toggle value
+            self._stored.config[toggle_key] = toggle_value
+
         # Confirm that the config is valid
         if not self.config_is_valid():
             return
@@ -251,7 +280,11 @@ class LxdCharm(CharmBase):
             return
 
         # All done
-        self.unit_active("Configuration change(s) applied successfully")
+        if error:
+            msg = "Some configuration change(s) didn't apply successfully"
+        else:
+            msg = "Configuration change(s) applied successfully"
+        self.unit_active(msg)
 
     def _on_charm_start(self, event: StartEvent) -> None:
         logger.info("Starting the LXD charm")
@@ -327,11 +360,37 @@ class LxdCharm(CharmBase):
             self.unit_active("Unblocking as the lxd- keys were reset to their initial values")
 
         for k in config_changed:
+            if k == "mode" and self._stored.lxd_initialized:
+                self.unit_blocked("Can't modify mode after initialization")
+                return False
+
+            # lxd-listen-* keys can be toggled at any time
+            if k.startswith("lxd-listen-"):
+                continue
+
             if k.startswith("lxd-") and self._stored.lxd_initialized:
                 self.unit_blocked(f"Can't modify lxd- keys after initialization: {k}")
                 return False
 
         return True
+
+    def juju_space_get_address(self, space_name: str, require_ipv4: bool = False) -> str:
+        """Return the primary IP address of network space.
+
+        If require_ipv4 is True, return the first IPv4 available
+        in the network space, if any, an emtpy string otherwise.
+        """
+        net = self.model.get_binding(space_name).network
+
+        if not require_ipv4:
+            return str(net.ingress_address)
+
+        addrs = net.ingress_addresses
+        ipv4_addrs = [a for a in addrs if a.version == 4]
+        if ipv4_addrs:
+            return str(ipv4_addrs[0])
+
+        return ""
 
     def juju_set_proxy(self) -> None:
         """Apply proxy config."""
@@ -506,8 +565,10 @@ class LxdCharm(CharmBase):
         # Done with the initialization
         self._stored.config["lxd-preseed"] = preseed
 
-        # Flag any `lxd-*` keys not handled, there should be none
+        # Flag any `lxd-*` keys not handled, except the `lxd-listen-*`, there should be none
         for k in self.config_changed():
+            if k.startswith("lxd-listen-"):
+                continue
             if k.startswith("lxd-"):
                 logger.error(f"lxd_init did not handle the key config named: {k}")
 
@@ -542,6 +603,48 @@ class LxdCharm(CharmBase):
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
             raise RuntimeError
+
+    def lxd_set_address(self, listener: str, addr: str) -> bool:
+        """Configure the core.<listener>_address and save the configured address.
+
+        Also save the boolean toggle to enable/disable the listener.
+        """
+        if listener not in ["bgp", "https"]:
+            logger.error(f"Invalid listener ({listener}) provided")
+            return False
+
+        # Some listeners require a special API extension
+        api_extensions = {
+            "bgp": "network_bgp",
+        }
+
+        required_api = api_extensions.get(listener)
+
+        client = pylxd.Client()
+        if required_api and not client.has_api_extension(required_api):
+            msg = (
+                f"LXD is missing the {required_api} API extension: "
+                f"unable to set core.{listener}_address"
+            )
+            logger.error(msg)
+            return False
+
+        if addr:
+            msg = f"Configuring core.{listener}_address ({addr})"
+        else:
+            msg = f"Disabling core.{listener}_address"
+        logger.debug(msg)
+
+        try:
+            client.api.patch(f'{{"config": {{"core.{listener}_address": "{addr}"}}}}')
+        except Exception as e:
+            logger.error(f"Failed to set listener: {e}")
+            return False
+
+        # Save the addr instead of the socket because it makes it easier
+        # to compare with the IP returned by get_binding()
+        self._stored.addresses[listener] = addr
+        return True
 
     def resource_sideload(self) -> None:
         """Sideload resources."""
