@@ -1,0 +1,53 @@
+name: test
+
+on:
+  - push
+  - pull_request
+
+jobs:
+  test:
+    name: Build charm
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        set -eux
+        sudo snap install charmcraft --classic
+        sudo snap install juju --classic
+        sudo snap install juju-wait --classic
+
+    - name: Init LXD
+      run: |
+        set -eux
+        sudo adduser "$USER" lxd
+        sudo -g lxd lxd init --auto
+
+    - name: Build charm
+      run: |
+        set -eux
+        sudo -g lxd charmcraft build
+
+    - name: Bootstrap Juju
+      run: |
+        set -eux
+        sudo -g lxd lxc network set lxdbr0 ipv6.address=none
+        sudo -g lxd juju bootstrap lxd local
+
+    - name: Deploy the charm
+      run: |
+        set -eux
+        juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 8 --config sysctl-tuning=false --config kernel-hardening=false
+        juju wait
+        juju status
+
+    - name: Check for errors
+      run: |
+        set -eux
+        if juju status --format=oneline | grep -qF workload:error; then
+            echo "Juju failed to deploy"
+            juju status --format=oneline
+            exit 1
+        fi
