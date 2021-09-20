@@ -1,4 +1,5 @@
 name: lxd
+display-name: LXD
 summary: A next generation system container and virtual machine manager
 maintainers:
   - Simon Deziel <simon.deziel@canonical.com>
