@@ -4,7 +4,7 @@ The [LXD charmed operator](https://github.com/canonical/charm-lxd) provides a si
 
 ## What is LXD?
 
-<img align="right" alt="LXD logo" src="icon.svg">
+<img align="right" alt="LXD logo" src="https://linuxcontainers.org/static/img/containers.svg">
 
 [LXD](https://linuxcontainers.org/lxd/introduction/) is a next generation system container and virtual machine manager. It offers a unified user experience around full Linux systems running inside containers or virtual machines.
 
