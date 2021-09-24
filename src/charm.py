@@ -187,7 +187,7 @@ class LxdCharm(CharmBase):
 
         # Space binding changes will trigger this event but won't show up in self.config
         # so those need to be processed even when config_changed() returns nothing
-        for listener in ["bgp", "https"]:
+        for listener in ["bgp", "https", "metrics"]:
             # Check if we should listen
             toggle_key = f"lxd-listen-{listener}"
             toggle_value = self.config.get(toggle_key)
@@ -691,13 +691,14 @@ class LxdCharm(CharmBase):
 
         Also save the boolean toggle to enable/disable the listener.
         """
-        if listener not in ["bgp", "https"]:
+        if listener not in ["bgp", "https", "metrics"]:
             logger.error(f"Invalid listener ({listener}) provided")
             return False
 
         # Some listeners require a special API extension
         api_extensions = {
             "bgp": "network_bgp",
+            "metrics": "metrics",
         }
 
         required_api = api_extensions.get(listener)

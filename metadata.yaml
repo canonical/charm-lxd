@@ -42,3 +42,5 @@ provides:
     interface: lxd-bgp
   https:
     interface: lxd-https
+  metrics:
+    interface: lxd-metrics
