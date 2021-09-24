@@ -37,6 +37,12 @@ storage:
     minimum-size: 10G
     multiple:
       range: 0-1
+extra-bindings:
+  # the FAN underlay network to use
+  fan:
+peers:
+  cluster:
+    interface: lxd-cluster
 provides:
   bgp:
     interface: lxd-bgp

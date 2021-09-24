@@ -23,6 +23,11 @@ options:
     type: string
     description: Pass a YAML configuration to `lxd init` on initial start
 
+  mode:
+    type: string
+    default: "standalone"
+    description: Operate in `standalone` or `cluster` mode
+
   snap-channel:
     type: string
     default: "latest/stable"
