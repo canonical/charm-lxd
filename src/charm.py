@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -17,6 +18,8 @@ from ops.charm import (
     CharmBase,
     ConfigChangedEvent,
     InstallEvent,
+    RelationChangedEvent,
+    RelationDepartedEvent,
     StartEvent,
 )
 from ops.framework import StoredState
@@ -80,13 +83,17 @@ class LxdCharm(CharmBase):
         )
 
         # Main event handlers
-        self.framework.observe(self.on.install, self._on_charm_install)
         self.framework.observe(self.on.config_changed, self._on_charm_config_changed)
+        self.framework.observe(self.on.install, self._on_charm_install)
         self.framework.observe(self.on.start, self._on_charm_start)
         self.framework.observe(self.on.upgrade_charm, self._on_charm_upgrade)
 
+        # Relation event handlers
+        self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
+        self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
+
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
-        """Add a client certificate to the trusted list."""
+        """Retrieve and add a client certificate to the trusted list."""
         name = event.params.get("name", "unknown")
         cert = event.params.get("cert")
         cert_url = event.params.get("cert-url")
@@ -138,18 +145,17 @@ class LxdCharm(CharmBase):
             logger.error(msg)
             return
 
-        cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
-        if projects:
-            cmd += ["--restricted", "--projects", projects]
-        try:
-            subprocess.run(cmd, input=cert, check=True)
-        except subprocess.CalledProcessError as e:
-            msg = f'Failed to run "{e.cmd}": {e.returncode}'
+        if self.lxd_trust_add(autoremove=False, cert=cert, name=name, projects=projects):
+            msg = "The client certificate is now trusted"
+            if projects:
+                msg += f" for the following project(s): {projects}"
+            event.set_results({"result": msg})
+        else:
+            msg = "Failed to add the certificate to the trusted list"
+            if projects:
+                msg += f" for the following project(s): {projects}"
             event.fail(msg)
             logger.error(msg)
-            raise RuntimeError
-
-        event.set_results({"result": "the client certificate is now trusted"})
 
     def _on_action_debug(self, event: ActionEvent) -> None:
         """Collect information for a bug report."""
@@ -167,43 +173,6 @@ class LxdCharm(CharmBase):
     def _on_action_show_pending_config(self, event: ActionEvent) -> None:
         """Show the currently pending configuration changes (queued for after the reboot)."""
         event.set_results({"pending": self.config_changed()})
-
-    def _on_charm_install(self, event: InstallEvent) -> None:
-        logger.info("Installing the LXD charm")
-        # Confirm that the config is valid
-        if not self.config_is_valid():
-            return
-
-        # Install LXD itself
-        try:
-            self.snap_install_lxd()
-            self._stored.lxd_installed = True
-            logger.info("LXD installed successfully")
-        except RuntimeError:
-            logger.error("Failed to install LXD")
-            event.defer()
-            return
-
-        # Apply various configs
-        self.snap_config_set()
-        self.kernel_sysctl()
-        self.kernel_hardening()
-
-        # Initial configuration
-        try:
-            self.lxd_init()
-            self._stored.lxd_initialized = True
-            logger.info("LXD initialized successfully")
-        except RuntimeError:
-            logger.error("Failed to initialize LXD")
-            event.defer()
-            return
-
-        # Apply sideloaded resources attached at deploy time
-        self.resource_sideload()
-
-        # All done
-        self.unit_active()
 
     def _on_charm_config_changed(self, event: ConfigChangedEvent) -> None:
         """React to configuration changes.
@@ -286,6 +255,43 @@ class LxdCharm(CharmBase):
             msg = "Configuration change(s) applied successfully"
         self.unit_active(msg)
 
+    def _on_charm_install(self, event: InstallEvent) -> None:
+        logger.info("Installing the LXD charm")
+        # Confirm that the config is valid
+        if not self.config_is_valid():
+            return
+
+        # Install LXD itself
+        try:
+            self.snap_install_lxd()
+            self._stored.lxd_installed = True
+            logger.info("LXD installed successfully")
+        except RuntimeError:
+            logger.error("Failed to install LXD")
+            event.defer()
+            return
+
+        # Apply various configs
+        self.snap_config_set()
+        self.kernel_sysctl()
+        self.kernel_hardening()
+
+        # Initial configuration
+        try:
+            self.lxd_init()
+            self._stored.lxd_initialized = True
+            logger.info("LXD initialized successfully")
+        except RuntimeError:
+            logger.error("Failed to initialize LXD")
+            event.defer()
+            return
+
+        # Apply sideloaded resources attached at deploy time
+        self.resource_sideload()
+
+        # All done
+        self.unit_active()
+
     def _on_charm_start(self, event: StartEvent) -> None:
         logger.info("Starting the LXD charm")
 
@@ -328,6 +334,82 @@ class LxdCharm(CharmBase):
 
         # Apply sideloaded resources attached after deployment
         self.resource_sideload()
+
+    def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Add the received client certificate to the trusted list."""
+        # Relation cannot be rejected so warn the operator if
+        # it won't be usable
+        if not self._stored.config["lxd-listen-https"]:
+            logger.warning("The https relation is not usable (lxd-listen-https=false)")
+
+        # TODO: in cluster mode, only the leader will have handle the received cert
+        d = event.relation.data[event.unit]
+        version = d.get("version")
+
+        if not version:
+            logger.error(f"No version found in {event.unit.name}")
+            return
+
+        if version != "1.0":
+            logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
+            return
+
+        cert = d.get("certificate")
+        if not cert:
+            logger.error("Missing cert in {event.unit.name}")
+            return
+        else:
+            cert = cert.encode()
+
+        # Convert from string to bool
+        autoremove = d.get("autoremove", False)
+        autoremove = autoremove in ["True", "true"]
+
+        projects = d.get("projects")
+
+        name = f"juju-relation-{self.model.name}-{event.unit.name}"
+
+        # Unconditionally remove the cert (ignoring the :autoremove suffix) prior to adding it
+        self.lxd_trust_remove(name, opportunistic=True)
+        if autoremove:
+            name += ":autoremove"
+
+        if self.lxd_trust_add(autoremove=autoremove, cert=cert, name=name, projects=projects):
+            msg = "The client certificate is now trusted"
+            if projects:
+                msg += f" for the following project(s): {projects}"
+            logger.info(msg)
+        else:
+            msg = "Failed to add the certificate to the trusted list"
+            if projects:
+                msg += f" for the following project(s): {projects}"
+            logger.error(msg)
+            return
+
+        client = pylxd.Client()
+        d = {
+            "version": "1.0",
+            "certificate": client.host_info["environment"]["certificate"],
+            "certificate_fingerprint": client.host_info["environment"]["certificate_fingerprint"],
+        }
+        addresses = client.host_info["environment"].get("addresses", "")
+
+        # Convert list to string separated by comma (only strings are allowed, not None)
+        if addresses:
+            d["addresses"] = ",".join(addresses)
+
+        # Reply with the info of the server/cluster
+        event.relation.data[self.unit].update(d)
+        logger.debug(f"Connection information sent to {event.unit.name}")
+
+    def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
+        """Remove the client certificate of the departed unit.
+
+        Look through all the certificate to see if one matches the name of
+        the departed unit and with the ":autoremove" suffix.
+        """
+        to_delete = f"juju-relation-{self.model.name}-{event.unit.name}:autoremove"
+        self.lxd_trust_remove(name=to_delete)
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
@@ -645,6 +727,64 @@ class LxdCharm(CharmBase):
         # to compare with the IP returned by get_binding()
         self._stored.addresses[listener] = addr
         return True
+
+    def lxd_trust_add(
+        self, autoremove: bool, cert: str, name: str, projects: Optional[str]
+    ) -> bool:
+        """Add a client certificate to the trusted list."""
+        msg = f"Adding {name}'s certificate to the trusted list"
+        cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
+        if projects:
+            msg += f" for projects: {projects}"
+            cmd += ["--restricted", "--projects", projects]
+
+        logger.info(msg)
+        try:
+            subprocess.run(cmd, input=cert, check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f'Failed to run "{e.cmd}": {e.returncode}')
+            return False
+
+        return True
+
+    def lxd_trust_remove(
+        self,
+        name: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        opportunistic: bool = False,
+    ) -> bool:
+        """Remove a client certificate from the trusted list."""
+        if not name and not fingerprint:
+            logger.error("No name nor fingerprint provided, not removing any certificate")
+            return False
+
+        client = pylxd.Client()
+
+        # If no fingerprint was provided, enumerate all certs looking for one with a matching
+        # name with or without a ":autoremove" suffix
+        possible_names = [name, f"{name}:autoremove"]
+        if not fingerprint:
+            for c in client.certificates.all():
+                if c.name in possible_names:
+                    fingerprint = c.fingerprint
+                    logger.debug(
+                        f"The certificate named {c.name} has the fingerprint: {fingerprint}"
+                    )
+                    break
+
+        if not fingerprint:
+            if not opportunistic:
+                logger.error(f"No certificate found with the name {name}")
+            return False
+
+        try:
+            c = client.certificates.get(fingerprint)
+            logger.info(f"Removing {c.name}'s certificate ({fingerprint}) from the trusted list")
+            c.delete()
+            return True
+        except pylxd.exceptions.NotFound:
+            logger.error(f"No certificate with fingerprint {fingerprint} found")
+            return False
 
     def resource_sideload(self) -> None:
         """Sideload resources."""
