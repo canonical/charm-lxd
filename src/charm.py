@@ -337,10 +337,14 @@ class LxdCharm(CharmBase):
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
         """Add the received client certificate to the trusted list."""
-        # Relation cannot be rejected so warn the operator if
-        # it won't be usable
+        # Relation cannot be rejected so notify the operator if it won't
+        # be usable and don't touch the remote unit data bag at all
         if not self._stored.config["lxd-listen-https"]:
-            logger.warning("The https relation is not usable (lxd-listen-https=false)")
+            logger.error(
+                "The https relation is not usable (lxd-listen-https=false), "
+                "please update the config and relate again"
+            )
+            return
 
         # TODO: in cluster mode, only the leader will have handle the received cert
         d = event.relation.data[event.unit]
@@ -391,12 +395,9 @@ class LxdCharm(CharmBase):
             "version": "1.0",
             "certificate": client.host_info["environment"]["certificate"],
             "certificate_fingerprint": client.host_info["environment"]["certificate_fingerprint"],
+            # Only strings are allowed so convert list to comma separated string
+            "addresses": "".join(client.host_info["environment"]["addresses"]),
         }
-        addresses = client.host_info["environment"].get("addresses", "")
-
-        # Convert list to string separated by comma (only strings are allowed, not None)
-        if addresses:
-            d["addresses"] = ",".join(addresses)
 
         # Reply with the info of the server/cluster
         event.relation.data[self.unit].update(d)
