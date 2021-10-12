@@ -100,9 +100,9 @@ class HttpsClientCharm(CharmBase):
                 f"/CN={self.unit.name.replace('/', '-')}",
             ]
             try:
-                subprocess.run(cmd, check=True)
+                subprocess.run(cmd, capture_output=True, check=True)
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 return
 
             # Save the self-signed certificate for later use

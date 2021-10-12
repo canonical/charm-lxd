@@ -160,9 +160,9 @@ class LxdCharm(CharmBase):
     def _on_action_debug(self, event: ActionEvent) -> None:
         """Collect information for a bug report."""
         try:
-            b = subprocess.run(["lxd.buginfo"], check=True)
+            b = subprocess.run(["lxd.buginfo"], capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            msg = f'Failed to run "{e.cmd}": {e.returncode}'
+            msg = f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})'
             event.fail(msg)
             logger.error(msg)
             raise RuntimeError
@@ -337,10 +337,14 @@ class LxdCharm(CharmBase):
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
         """Add the received client certificate to the trusted list."""
-        # Relation cannot be rejected so warn the operator if
-        # it won't be usable
+        # Relation cannot be rejected so notify the operator if it won't
+        # be usable and don't touch the remote unit data bag at all
         if not self._stored.config["lxd-listen-https"]:
-            logger.warning("The https relation is not usable (lxd-listen-https=false)")
+            logger.error(
+                "The https relation is not usable (lxd-listen-https=false), "
+                "please update the config and relate again"
+            )
+            return
 
         # TODO: in cluster mode, only the leader will have handle the received cert
         d = event.relation.data[event.unit]
@@ -391,12 +395,9 @@ class LxdCharm(CharmBase):
             "version": "1.0",
             "certificate": client.host_info["environment"]["certificate"],
             "certificate_fingerprint": client.host_info["environment"]["certificate_fingerprint"],
+            # Only strings are allowed so convert list to comma separated string
+            "addresses": "".join(client.host_info["environment"]["addresses"]),
         }
-        addresses = client.host_info["environment"].get("addresses", "")
-
-        # Convert list to string separated by comma (only strings are allowed, not None)
-        if addresses:
-            d["addresses"] = ",".join(addresses)
 
         # Reply with the info of the server/cluster
         event.relation.data[self.unit].update(d)
@@ -508,23 +509,29 @@ class LxdCharm(CharmBase):
         try:
             if http_proxy:
                 logger.debug(f"Configuring core.proxy_http={http_proxy}")
-                subprocess.run(["lxc", "config", "set", "core.proxy_http", http_proxy], check=True)
+                subprocess.run(
+                    ["lxc", "config", "set", "core.proxy_http", http_proxy],
+                    capture_output=True,
+                    check=True,
+                )
 
             if https_proxy:
                 logger.debug(f"Configuring core.proxy_https={https_proxy}")
                 subprocess.run(
                     ["lxc", "config", "set", "core.proxy_https", https_proxy],
+                    capture_output=True,
                     check=True,
                 )
             if no_proxy:
                 logger.debug(f"Configuring core.proxy_ignore_hosts={no_proxy}")
                 subprocess.run(
                     ["lxc", "config", "set", "core.proxy_ignore_hosts", no_proxy],
+                    capture_output=True,
                     check=True,
                 )
 
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
             raise RuntimeError
 
     def kernel_sysctl(self) -> None:
@@ -540,9 +547,11 @@ class LxdCharm(CharmBase):
                     f.write(f"{k} = {v}\n")
 
             try:
-                subprocess.run(["sysctl", "--quiet", "--load", sysctl_file], check=True)
+                subprocess.run(
+                    ["sysctl", "--quiet", "--load", sysctl_file], capture_output=True, check=True
+                )
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 raise RuntimeError
 
         elif os.path.exists(sysctl_file):
@@ -563,9 +572,9 @@ class LxdCharm(CharmBase):
             with open(systemd_tmpfiles, "w", encoding="UTF-8") as f:
                 f.write("\n".join(SYSTEMD_TMPFILES_CONFIGS) + "\n")
             try:
-                subprocess.run(["systemd-tmpfiles", "--create"], check=True)
+                subprocess.run(["systemd-tmpfiles", "--create"], capture_output=True, check=True)
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 raise RuntimeError
 
         elif os.path.exists(systemd_tmpfiles):
@@ -586,9 +595,14 @@ class LxdCharm(CharmBase):
 
             try:
                 # NOTE: When preseeding, no further configuration is applied.
-                subprocess.run(["lxd", "init", "--preseed"], check=True, input=preseed.encode())
+                subprocess.run(
+                    ["lxd", "init", "--preseed"],
+                    capture_output=True,
+                    check=True,
+                    input=preseed.encode(),
+                )
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 raise RuntimeError
         else:
             self.unit_maintenance("Performing initial configuration")
@@ -598,10 +612,18 @@ class LxdCharm(CharmBase):
                 if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
                     src = f"source={self.model.storages['local'][0].location}"
                     self.unit_maintenance(f"Configuring external storage pool (zfs, {src})")
-                    subprocess.run(["lxc", "storage", "create", "local", "zfs", src], check=True)
+                    subprocess.run(
+                        ["lxc", "storage", "create", "local", "zfs", src],
+                        capture_output=True,
+                        check=True,
+                    )
                 else:
                     self.unit_maintenance("Configuring local storage pool (dir)")
-                    subprocess.run(["lxc", "storage", "create", "local", "dir"], check=True)
+                    subprocess.run(
+                        ["lxc", "storage", "create", "local", "dir"],
+                        capture_output=True,
+                        check=True,
+                    )
                 subprocess.run(
                     [
                         "lxc",
@@ -620,7 +642,9 @@ class LxdCharm(CharmBase):
                 # Configure the network
                 self.unit_maintenance("Configuring network bridge (lxdbr0)")
 
-                subprocess.run(["lxc", "network", "create", "lxdbr0"], check=True)
+                subprocess.run(
+                    ["lxc", "network", "create", "lxdbr0"], capture_output=True, check=True
+                )
 
                 subprocess.run(
                     [
@@ -638,7 +662,7 @@ class LxdCharm(CharmBase):
                 )
 
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 raise RuntimeError
 
         # Initial configuration of core.proxy_* keys
@@ -667,13 +691,15 @@ class LxdCharm(CharmBase):
         self.unit_maintenance("Reloading LXD")
         try:
             # Avoid occasional race during startup where a reload could cause a failure
-            subprocess.run(["lxd", "waitready", "--timeout=30"], check=False)
+            subprocess.run(["lxd", "waitready", "--timeout=30"], capture_output=True, check=False)
             # Start a monitor process and wait for it to exit due to the service
             # reloading and the old lxd process closing the monitor's socket.
             mon = subprocess.Popen(
                 ["lxc", "monitor", "--type=nonexistent"], stderr=subprocess.DEVNULL
             )
-            subprocess.run(["systemctl", "reload", "snap.lxd.daemon.service"], check=True)
+            subprocess.run(
+                ["systemctl", "reload", "snap.lxd.daemon.service"], capture_output=True, check=True
+            )
             mon.wait(timeout=600)
 
         except subprocess.TimeoutExpired:
@@ -683,7 +709,7 @@ class LxdCharm(CharmBase):
             raise RuntimeError
 
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
             raise RuntimeError
 
     def lxd_set_address(self, listener: str, addr: str) -> bool:
@@ -741,9 +767,9 @@ class LxdCharm(CharmBase):
 
         logger.info(msg)
         try:
-            subprocess.run(cmd, input=cert, check=True)
+            subprocess.run(cmd, input=cert, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.returncode}')
+            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
             return False
 
         return True
@@ -893,9 +919,9 @@ class LxdCharm(CharmBase):
         self.unit_maintenance("Setting snap configuration(s): " + ", ".join(snap_set_list))
 
         try:
-            subprocess.run(["snap", "set", "lxd"] + snap_set_list, check=True)
+            subprocess.run(["snap", "set", "lxd"] + snap_set_list, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
             raise RuntimeError
 
         # If "snap set lxd" was successful: save all the k/v applied
@@ -920,12 +946,16 @@ class LxdCharm(CharmBase):
         self.unit_maintenance(f"Installing LXD snap (channel={channel_name})")
 
         try:
-            subprocess.run(["snap", "install", "lxd", f"--channel={channel}"], check=True)
-            subprocess.run(["snap", "refresh", "lxd", f"--channel={channel}"], check=True)
+            subprocess.run(
+                ["snap", "install", "lxd", f"--channel={channel}"], capture_output=True, check=True
+            )
+            subprocess.run(
+                ["snap", "refresh", "lxd", f"--channel={channel}"], capture_output=True, check=True
+            )
             if os.path.exists("/var/lib/lxd"):
-                subprocess.run(["lxd.migrate", "-yes"], check=True)
+                subprocess.run(["lxd.migrate", "-yes"], capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
             raise RuntimeError
 
         # Done with the snap installation
@@ -951,13 +981,13 @@ class LxdCharm(CharmBase):
             enable = ["systemctl", "enable", "--now", "snap.lxd.daemon.unix.socket"]
 
         try:
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, capture_output=True, check=True)
             if alias:
-                subprocess.run(alias, check=True)
+                subprocess.run(alias, capture_output=True, check=True)
             if enable:
-                subprocess.run(enable, check=True)
+                subprocess.run(enable, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.returncode}')
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
             raise RuntimeError
 
     def snap_sideload_lxd_binary(self) -> None:
