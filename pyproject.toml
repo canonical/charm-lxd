@@ -37,6 +37,7 @@ docstring-convention = "google"
 
 # Static analysis tools configuration
 [tool.mypy]
+exclude = "build"
 pretty = true
 python_version = 3.8
 mypy_path = "$MYPY_CONFIG_FILE_DIR/src:$MYPY_CONFIG_FILE_DIR/lib:$MYPY_CONFIG_FILE_DIR/tests/unit"

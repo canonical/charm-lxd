@@ -25,10 +25,13 @@ jobs:
         sudo adduser "$USER" lxd
         sudo -g lxd lxd init --auto
 
-    - name: Build charm
+    - name: Build charms
       run: |
         set -eux
         sudo -g lxd charmcraft build
+
+        # ancillary charm for testing purposes
+        sudo -g lxd charmcraft build --from examples/https-client
 
     - name: Bootstrap Juju
       run: |
@@ -36,10 +39,50 @@ jobs:
         sudo -g lxd lxc network set lxdbr0 ipv6.address=none
         sudo -g lxd juju bootstrap lxd local
 
-    - name: Deploy the charm
+    - name: Exercice lxd-https relation
       run: |
         set -eux
-        juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 8 --config sysctl-tuning=false --config kernel-hardening=false
+
+        # capture juju's logs on error
+        debug() {
+            rc="$?"
+            set +e
+            juju debug-log --replay --level DEBUG > juju-debug.log
+            exit "$rc"
+        }
+        trap debug ERR EXIT
+
+        juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config sysctl-tuning=false --config kernel-hardening=false --config lxd-listen-https=true
+        juju deploy ./https-client_ubuntu-20.04-amd64.charm --config autoremove=false
+        juju relate https-client lxd
+        juju wait
+        juju status --relations
+
+        # confirm lxd now trusts the client cert
+        juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-.+-https-client/[0-9]+,"
+
+        # toggle the autoremove config and check if lxd's side is updated
+        juju config https-client autoremove=true
+        juju wait
+        juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-.+-https-client/[0-9]+:autoremove,"
+
+        # removing the https-client application will break the
+        # relation causing the removal of the cert
+        juju remove-application https-client
+        juju wait
+        ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-.+-https-client/[0-9]+:autoremove,"
+        juju status --relations
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: juju-debug-logs ${{ github.job }}
+        path: juju-debug.log
+        retention-days: 5
+
+    - name: Scale the number of lxd units
+      run: |
+        set -eux
+        juju add-unit lxd --num-units 3
         juju wait
         juju status
 
