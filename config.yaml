@@ -14,6 +14,11 @@ options:
     default: false
     description: Enable/disable the remote API (HTTPS)
 
+  lxd-listen-metrics:
+    type: boolean
+    default: false
+    description: Enable/disable the metrics endpoint
+
   lxd-preseed:
     type: string
     description: Pass a YAML configuration to `lxd init` on initial start
