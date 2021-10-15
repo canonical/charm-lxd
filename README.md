@@ -30,6 +30,12 @@ Or a unit using local storage as `ZFS` storage backend:
 juju deploy lxd --storage local=100G,1
 ```
 
+Or a cluster of 3 members:
+
+```shell
+juju deploy lxd --num-units 3 --config mode=cluster
+```
+
 ## Resources
 
 For debugging purposes, the charm allows sideloading a LXD binary (`lxd-binary`) or a full LXD snap (`lxd-snap`) by attaching resources at deploy time or later on. Both resources also accept tarballs containing architecture specific assets to support mixed architecture deployments. Those tarballs need to contain files at the root named as lxd_${ARCH} for the `lxd-binary` resource and lxd_${ARCH}.snap for the `lxd-snap` resource.
