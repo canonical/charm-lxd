@@ -1,3 +1,4 @@
 charmhelpers
 ops >= 1.2.0
 pylxd
+pyyaml

@@ -2,6 +2,8 @@
 
 """LXD charm."""
 
+import ipaddress
+import json
 import logging
 import os
 import shutil
@@ -13,12 +15,14 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 import pylxd
+import yaml
 from ops.charm import (
     ActionEvent,
     CharmBase,
     ConfigChangedEvent,
     InstallEvent,
     RelationChangedEvent,
+    RelationCreatedEvent,
     RelationDepartedEvent,
     StartEvent,
 )
@@ -67,6 +71,7 @@ class LxdCharm(CharmBase):
             addresses={},
             config={},
             lxd_binary_path=None,
+            lxd_clustered=False,
             lxd_initialized=False,
             lxd_installed=False,
             lxd_snap_path=None,
@@ -89,6 +94,11 @@ class LxdCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self._on_charm_upgrade)
 
         # Relation event handlers
+        self.framework.observe(self.on.cluster_relation_changed, self._on_cluster_relation_changed)
+        self.framework.observe(self.on.cluster_relation_created, self._on_cluster_relation_created)
+        self.framework.observe(
+            self.on.cluster_relation_departed, self._on_cluster_relation_departed
+        )
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
 
@@ -335,6 +345,188 @@ class LxdCharm(CharmBase):
         # Apply sideloaded resources attached after deployment
         self.resource_sideload()
 
+    def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
+        """If not in cluster mode: do nothing.
+
+        * If we are a leader: issue a join token.
+        * If we are a new unit: use the newly minted token to join the cluster.
+        """
+        # All units automatically get a cluster peer relation irrespective of the mode
+        # so do nothing if not in cluster mode
+        if self.config.get("mode") != "cluster":
+            return
+
+        if self.unit.is_leader():
+            if not event.unit:
+                logger.debug("No available data yet")
+                return
+
+            # The leader needs to look for join token to issue in the unit data bag
+            d = event.relation.data[event.unit]
+            version = d.get("version")
+
+            if not version:
+                logger.error(f"Missing version in {event.unit.name}")
+                return
+
+            if version != "1.0":
+                logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
+                return
+
+            hostname = d.get("hostname")
+            if not hostname:
+                # Clear the app data bag of any consumed token associated with the remote unit
+                if event.relation.data[self.app].pop(event.unit.name, None):
+                    logger.debug(f"Cleared consumed token for {event.unit.name}")
+                else:
+                    logger.error(f"Missing hostname in {event.unit.name}")
+                return
+
+            logger.debug(f"Cluster join token request received from {event.unit.name}")
+
+            token = self.lxd_cluster_add_token(hostname)
+            if not token:
+                logger.error(f"Unable to add a join token for hostname={hostname}")
+                return
+
+            member_config = pylxd.Client().cluster.get().member_config
+
+            # Strip the "description" and convert to compact JSON string
+            for c in member_config:
+                _ = c.pop("description", None)
+            member_config = json.dumps(member_config, separators=(",", ":"))
+
+            # Update the members list in the app data bag with the hostname of the unit that is
+            # about to join the cluster
+            members = event.relation.data[self.app].get("members")
+            if members:
+                members = json.loads(members)
+            else:
+                # If there is no members list, it means we need to add ourself first
+                # and then the newly joined member
+                my_hostname = os.uname().nodename
+                logger.debug(
+                    f"Initializing the members list with {self.unit.name} ({my_hostname})"
+                )
+                members = {self.unit.name: my_hostname}
+
+            logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
+            members[event.unit.name] = hostname
+
+            # Convert the members list to a compact JSON string
+            members = json.dumps(members, separators=(",", ":"))
+
+            event.relation.data[self.app].update(
+                {
+                    "version": "1.0",
+                    event.unit.name: token,
+                    "member_config": member_config,
+                    "members": members,
+                }
+            )
+            logger.debug(f"Cluster joining information added for {event.unit.name}")
+        elif not self._stored.lxd_clustered:  # Exit early if already clustered
+
+            # As a non leader, check if we received a token in the app data bag
+            d = event.relation.data[self.app]
+            version = d.get("version")
+
+            if not version:
+                logger.error(f"Missing version in {self.app.name}")
+                return
+
+            if version != "1.0":
+                logger.error(f"Incompatible version ({version}) found in {self.app.name}")
+                return
+
+            token = d.get(self.unit.name)
+            if not token:
+                logger.error(f"Missing token for {self.unit.name} in {self.app.name}")
+                return
+
+            member_config = d.get("member_config")
+            if not member_config:
+                logger.error(f"Missing member_config in {self.app.name}")
+                return
+
+            # Hand over the token and member_config
+            logger.debug(f"Cluster joining information found in {self.app.name}")
+            self.lxd_cluster_join(token, member_config)
+
+            # Remove our hostname from our unit data bag to signify
+            # we no loger need a join token to be emitted
+            _ = event.relation.data[self.unit].pop("hostname", None)
+
+            logger.debug(f"The unit {self.unit.name} is now part of the cluster")
+
+    def _on_cluster_relation_created(self, event: RelationCreatedEvent) -> None:
+        """If not in cluster mode: do nothing.
+
+        Add our hostname to the unit data bag which will be used to issue a join token later on.
+        """
+        # All units automatically get a cluster peer relation irrespective of the mode
+        # so do nothing if not in cluster mode
+        if self.config.get("mode") != "cluster":
+            return
+
+        # The leader will be the one creating the cluster so no join token needed
+        if self.unit.is_leader():
+            logger.debug("Not requesting cluster join token (we are leader)")
+            return
+
+        # Request a join token by adding our hostname to the unit data bag
+        event.relation.data[self.unit].update(
+            {
+                "version": "1.0",
+                "hostname": os.uname().nodename,
+            }
+        )
+        logger.debug("Cluster join token requested")
+
+    def _on_cluster_relation_departed(self, event: RelationDepartedEvent) -> None:
+        # All units automatically get a cluster peer relation irrespective of the mode
+        if self.config.get("mode") != "cluster":
+            return
+
+        # If we never joined, no point in departing
+        if not self._stored.lxd_clustered:
+            return
+
+        # Only the leader will deal with node removal
+        if not self.unit.is_leader():
+            return
+
+        # Load the list of cluster members
+        members = event.relation.data[self.app].get("members")
+        if not members:
+            logger.error(f"Unable to get the cluster members list from {self.app.name}")
+            return
+
+        members = json.loads(members)
+
+        # Lookup the hostname of the unit that left
+        hostname = members.pop(event.unit.name, None)
+        if not hostname:
+            logger.error(
+                f"Unable to find the hostname of {event.unit.name}, not removing from the cluster"
+            )
+            return
+        else:
+            logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
+
+        # Remove it from the cluster
+        self.lxd_cluster_remove(hostname)
+
+        # Save the updated cluster members list
+        members = json.dumps(members, separators=(",", ":"))
+        event.relation.data[self.app].update(
+            {
+                "members": members,
+            }
+        )
+
+        logger.debug(f"The unit {event.unit.name} is no longer part of the cluster")
+
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
         """Add the received client certificate to the trusted list."""
         # Relation cannot be rejected so notify the operator if it won't
@@ -351,7 +543,7 @@ class LxdCharm(CharmBase):
         version = d.get("version")
 
         if not version:
-            logger.error(f"No version found in {event.unit.name}")
+            logger.error(f"Missing version in {event.unit.name}")
             return
 
         if version != "1.0":
@@ -360,7 +552,7 @@ class LxdCharm(CharmBase):
 
         cert = d.get("certificate")
         if not cert:
-            logger.error("Missing cert in {event.unit.name}")
+            logger.error(f"Missing certificate in {event.unit.name}")
             return
         else:
             cert = cert.encode()
@@ -454,6 +646,11 @@ class LxdCharm(CharmBase):
             if k.startswith("lxd-") and self._stored.lxd_initialized:
                 self.unit_blocked(f"Can't modify lxd- keys after initialization: {k}")
                 return False
+
+        # lxd-preseed can only be set when mode=standalone
+        if self.config.get("lxd-preseed") and self.config.get("mode") != "standalone":
+            self.unit_blocked("Can't provide lxd-preseed when mode != standalone")
+            return False
 
         return True
 
@@ -584,13 +781,106 @@ class LxdCharm(CharmBase):
         # Persist the configuration
         self._stored.config["kernel-hardening"] = config
 
+    def lxd_cluster_add_token(self, hostname: str) -> Optional[str]:
+        """Add/issue a join token for `hostname`."""
+        c = subprocess.run(
+            ["lxc", "cluster", "add", hostname],
+            capture_output=True,
+            check=False,
+            encoding="UTF-8",
+        )
+
+        if c.returncode != 0 or not c.stdout:
+            logger.debug(
+                f'The command "lxc cluster add {hostname}" did not produce '
+                f"any output (rc={c.returncode})"
+            )
+            return None
+
+        try:
+            token = c.stdout.splitlines()[1]
+        except IndexError:
+            return None
+
+        return token
+
+    def lxd_cluster_join(self, token: str, member_config: str) -> None:
+        """Join an existing cluster."""
+        logger.debug("Joining cluster")
+        conf = json.loads(member_config)
+
+        # If a local storage device was provided, it needs to be added in the storage-pool
+        if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
+            for m in conf:
+                if m.get("entity") == "storage-pool":
+                    dev = self.model.storages["local"][0].location
+                    m["value"] = dev
+
+        cluster_address = self.juju_space_get_address("cluster")
+        if not cluster_address:
+            self.unit_blocked("Unable to get the cluster space address")
+            raise RuntimeError
+
+        preseed = {
+            "config": {},
+            "networks": [],
+            "storage_pools": [],
+            "profiles": [],
+            "projects": [],
+            "cluster": {
+                "enabled": True,
+                "member_config": conf,
+                "server_address": cluster_address,
+                "cluster_token": token,
+            },
+        }
+        preseed_yaml = yaml.safe_dump(
+            preseed,
+            sort_keys=False,
+            default_style=None,
+            default_flow_style=None,
+            encoding="UTF-8",
+        )
+
+        self.unit_maintenance("Joining cluster")
+        try:
+            subprocess.run(["lxd", "init", "--preseed"], check=True, input=preseed_yaml)
+        except subprocess.CalledProcessError as e:
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+
+            # Leave a copy of the YAML preseed that didn't work
+            handle, tmp_file = tempfile.mkstemp()
+            with os.fdopen(handle, "wb") as f:
+                f.write(preseed_yaml)
+            logger.error(f"The YAML preseed that caused a failure was saved to {tmp_file}")
+            raise RuntimeError
+
+        self.unit_active()
+        self._stored.lxd_clustered = True
+        logger.debug(f"Cluster joined successfully consuming the token: {token}")
+
+    def lxd_cluster_remove(self, member: str) -> None:
+        """Remove a member from the cluster."""
+        try:
+            subprocess.run(
+                ["lxc", "cluster", "remove", "--force", member],
+                capture_output=True,
+                check=True,
+                input="yes".encode(),
+            )
+        except subprocess.CalledProcessError as e:
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+
     def lxd_init(self) -> None:
         """Apply initial configuration of LXD."""
-        self.unit_maintenance("Initializing LXD in standalone mode")
+        mode = self.config.get("mode")
+        self.unit_maintenance(f"Initializing LXD in {mode} mode")
 
         preseed = self.config.get("lxd-preseed")
 
         if preseed:
+            assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
+
             self.unit_maintenance("Applying LXD preseed")
 
             try:
@@ -607,59 +897,131 @@ class LxdCharm(CharmBase):
         else:
             self.unit_maintenance("Performing initial configuration")
 
+            if mode == "standalone":
+                configure_storage = True
+                network_dev = "lxdbr0"
+            elif self.unit.is_leader():  # leader and mode=cluster
+                configure_storage = True
+                network_dev = "lxdfan0"
+            else:  # non-leader and mode=cluster
+                configure_storage = False
+                network_dev = ""
+
             try:
                 # Configure the storage
-                if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
-                    src = f"source={self.model.storages['local'][0].location}"
-                    self.unit_maintenance(f"Configuring external storage pool (zfs, {src})")
+                if configure_storage:
+                    if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
+                        src = f"source={self.model.storages['local'][0].location}"
+                        self.unit_maintenance("Configuring external storage pool (zfs, {src})")
+                        subprocess.run(
+                            ["lxc", "storage", "create", "local", "zfs", src],
+                            capture_output=True,
+                            check=True,
+                        )
+                    else:
+                        self.unit_maintenance("Configuring local storage pool (dir)")
+                        subprocess.run(
+                            ["lxc", "storage", "create", "local", "dir"],
+                            capture_output=True,
+                            check=True,
+                        )
                     subprocess.run(
-                        ["lxc", "storage", "create", "local", "zfs", src],
+                        [
+                            "lxc",
+                            "profile",
+                            "device",
+                            "add",
+                            "default",
+                            "root",
+                            "disk",
+                            "pool=local",
+                            "path=/",
+                        ],
                         capture_output=True,
                         check=True,
                     )
-                else:
-                    self.unit_maintenance("Configuring local storage pool (dir)")
-                    subprocess.run(
-                        ["lxc", "storage", "create", "local", "dir"],
-                        capture_output=True,
-                        check=True,
-                    )
-                subprocess.run(
-                    [
-                        "lxc",
-                        "profile",
-                        "device",
-                        "add",
-                        "default",
-                        "root",
-                        "disk",
-                        "pool=local",
-                        "path=/",
-                    ],
-                    check=True,
-                )
 
                 # Configure the network
-                self.unit_maintenance("Configuring network bridge (lxdbr0)")
+                if network_dev:
+                    if network_dev == "lxdfan0":  # try to find a valid subnet to use for FAN
+                        try:
+                            fan_address = self.juju_space_get_address("fan", require_ipv4=True)
+                            fan_subnet = ipaddress.IPv4Network(fan_address).supernet(new_prefix=16)
+                            logger.debug(f"Using {fan_subnet} as FAN underlay network")
+                        except Exception:
+                            msg = "Can't find a valid subnet for FAN, falling back to lxdbr0"
+                            self.unit_maintenance(msg)
+                            network_dev = "lxdbr0"
 
-                subprocess.run(
-                    ["lxc", "network", "create", "lxdbr0"], capture_output=True, check=True
-                )
+                    self.unit_maintenance(f"Configuring network bridge ({network_dev})")
 
-                subprocess.run(
-                    [
-                        "lxc",
-                        "profile",
-                        "device",
-                        "add",
-                        "default",
-                        "eth0",
-                        "nic",
-                        "network=lxdbr0",
-                        "name=eth0",
-                    ],
-                    check=True,
-                )
+                    if network_dev == "lxdfan0":
+                        subprocess.run(
+                            [
+                                "lxc",
+                                "network",
+                                "create",
+                                network_dev,
+                                "bridge.mode=fan",
+                                f"fan.underlay_subnet={fan_subnet}",
+                            ],
+                            capture_output=True,
+                            check=True,
+                        )
+                    else:
+                        subprocess.run(
+                            ["lxc", "network", "create", network_dev],
+                            capture_output=True,
+                            check=True,
+                        )
+
+                    subprocess.run(
+                        [
+                            "lxc",
+                            "profile",
+                            "device",
+                            "add",
+                            "default",
+                            "eth0",
+                            "nic",
+                            f"network={network_dev}",
+                            "name=eth0",
+                        ],
+                        capture_output=True,
+                        check=True,
+                    )
+
+                if mode == "cluster":
+                    cluster_address = self.juju_space_get_address("cluster")
+                    if not cluster_address:
+                        self.unit_blocked("Unable to get the cluster space address")
+                        raise RuntimeError
+
+                    self.unit_maintenance(f"Configuring cluster.https_address ({cluster_address})")
+                    subprocess.run(
+                        [
+                            "lxc",
+                            "config",
+                            "set",
+                            "cluster.https_address",
+                            cluster_address,
+                        ],
+                        capture_output=True,
+                        check=True,
+                    )
+
+                    # XXX: prevent the creation of another parallel cluster by checking if there is
+                    # already an app data bag (self.model.get_relation("cluster").data[self.app])
+
+                    # Enable clustring if needed
+                    if self.unit.is_leader():
+                        self.unit_maintenance("Enabling cluster mode")
+                        subprocess.run(
+                            ["lxc", "cluster", "enable", os.uname().nodename],
+                            capture_output=True,
+                            check=True,
+                        )
+                        self._stored.lxd_clustered = True
 
             except subprocess.CalledProcessError as e:
                 self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
@@ -669,6 +1031,7 @@ class LxdCharm(CharmBase):
         self.juju_set_proxy()
 
         # Done with the initialization
+        self._stored.config["mode"] = mode
         self._stored.config["lxd-preseed"] = preseed
 
         # Flag any `lxd-*` keys not handled, except the `lxd-listen-*`, there should be none
@@ -945,12 +1308,29 @@ class LxdCharm(CharmBase):
             channel_name = "latest/stable"
         self.unit_maintenance(f"Installing LXD snap (channel={channel_name})")
 
+        # During the install phase, there won't be anything in self._stored.config
+        # so fallback to the live configuration
+        mode = self._stored.config.get("mode")
+        if not mode:
+            mode = self.config["mode"]
+
+        # Cluster members all need to get the same snap version so set a cohort
+        if mode == "cluster":
+            logger.debug("Using snap cohort due to mode=cluster")
+            cohort = ["--cohort=+"]
+        else:
+            cohort = []
+
         try:
             subprocess.run(
-                ["snap", "install", "lxd", f"--channel={channel}"], capture_output=True, check=True
+                ["snap", "install", "lxd", f"--channel={channel}"] + cohort,
+                capture_output=True,
+                check=True,
             )
             subprocess.run(
-                ["snap", "refresh", "lxd", f"--channel={channel}"], capture_output=True, check=True
+                ["snap", "refresh", "lxd", f"--channel={channel}"] + cohort,
+                capture_output=True,
+                check=True,
             )
             if os.path.exists("/var/lib/lxd"):
                 subprocess.run(["lxd.migrate", "-yes"], capture_output=True, check=True)
