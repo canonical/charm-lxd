@@ -813,7 +813,7 @@ class LxdCharm(CharmBase):
         if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
             for m in conf:
                 if m.get("entity") == "storage-pool":
-                    dev = self.model.storages["local"][0].location
+                    dev = str(self.model.storages["local"][0].location)
                     m["value"] = dev
 
         cluster_address = self.juju_space_get_address("cluster")
