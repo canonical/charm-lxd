@@ -812,7 +812,7 @@ class LxdCharm(CharmBase):
         # If a local storage device was provided, it needs to be added in the storage-pool
         if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
             for m in conf:
-                if m.get("entity") == "storage-pool":
+                if m.get("entity") == "storage-pool" and m.get("key") == "source":
                     dev = str(self.model.storages["local"][0].location)
                     m["value"] = dev
 
