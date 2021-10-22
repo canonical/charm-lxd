@@ -10,6 +10,7 @@ from ops.charm import (
     CharmBase,
     ConfigChangedEvent,
     InstallEvent,
+    RelationBrokenEvent,
     RelationChangedEvent,
     RelationCreatedEvent,
     StartEvent,
@@ -36,6 +37,7 @@ class HttpsClientCharm(CharmBase):
         # Initialize the persistent storage if needed
         self._stored.set_default(
             cert=None,
+            remote_lxd_is_clustered=False,
         )
 
         # Main event handlers
@@ -44,6 +46,7 @@ class HttpsClientCharm(CharmBase):
         self.framework.observe(self.on.start, self._on_charm_start)
 
         # Relation event handlers
+        self.framework.observe(self.on.https_relation_broken, self._on_https_relation_broken)
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_created, self._on_https_relation_created)
 
@@ -114,17 +117,49 @@ class HttpsClientCharm(CharmBase):
         if self._stored.cert:
             self.unit_active("Starting the https-client charm")
 
+    def _on_https_relation_broken(self, event: RelationBrokenEvent) -> None:
+        """Forget that we previously dealt with a remote LXD cluster."""
+        if self._stored.remote_lxd_is_clustered:
+            self._stored.remote_lxd_is_clustered = False
+            logger.debug("Forgetting our previous relation with a remote LXD cluster")
+
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
-        """Retrieve and display the connection information of the newly formed https relation."""
-        d = event.relation.data[event.unit]
-        version = d.get("version")
+        """Retrieve and display the connection information of the newly formed https relation.
+
+        First look in the app data bag to find connection informations to a remote LXD cluster.
+        Fallback to the unit data bag which is where the connection informations will be left by
+        standalone LXD units.
+        """
+        # If we are dealing with a clustered LXD, only check connectivity
+        # once for the whole cluster, not individual units
+        if self._stored.remote_lxd_is_clustered:
+            if event.unit:
+                remote_unit = event.unit.name
+            else:
+                remote_unit = "The remote unit"
+            logger.debug(f"{remote_unit} is part of a known cluster, nothing to do")
+            return
+
+        for bag in [event.app, event.unit]:
+            if not bag:
+                continue
+
+            d = event.relation.data[bag]
+            version = d.get("version")
+            if version:
+                # If the app data bag is where we found the version it
+                # means we are dealing with a LXD cluster at the other end
+                self._stored.remote_lxd_is_clustered = bag == event.app
+                break
+            else:
+                logger.debug(f"No version found in {bag.name}")
 
         if not version:
-            logger.error(f"No version found in {event.unit.name}")
+            logger.error("No version found in any data bags")
             return
 
         if version != "1.0":
-            logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
+            logger.error(f"Incompatible version ({version}) found in {bag.name}")
             return
 
         certificate = d.get("certificate")
@@ -136,7 +171,7 @@ class HttpsClientCharm(CharmBase):
             addresses = addresses.split(",")
 
         logger.info(
-            f"Connection information for {event.unit.name}:\n"
+            f"Connection information for {bag.name}:\n"
             f"certificate={certificate}\n"
             f"certificate_fingerprint={certificate_fingerprint}\n"
             f"addresses={addresses}"
@@ -144,15 +179,13 @@ class HttpsClientCharm(CharmBase):
 
         if not addresses:
             logger.info(
-                f"Unable to test https connectivity to {event.unit.name}"
-                " as no address was provided"
+                f"Unable to test https connectivity to {bag.name} as no address was provided"
             )
             return
 
         if not certificate:
             logger.info(
-                f"Unable to test https connectivity to {event.unit.name}"
-                " as no certificate was provided"
+                f"Unable to test https connectivity to {bag.name} as no certificate was provided"
             )
             return
 
@@ -169,7 +202,12 @@ class HttpsClientCharm(CharmBase):
 
         # Report remote LXD version to show the connection worked
         server_version = client.host_info["environment"]["server_version"]
-        logger.info(f"{event.unit.name} runs LXD version: {server_version}")
+
+        if self._stored.remote_lxd_is_clustered:
+            msg = f"The cluster runs LXD version: {server_version}"
+        else:
+            msg = f"{bag.name} runs LXD version: {server_version}"
+        logger.info(msg)
 
     def _on_https_relation_created(self, event: RelationCreatedEvent) -> None:
         """Upload our client certificate to the remote unit."""
