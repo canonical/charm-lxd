@@ -538,7 +538,10 @@ class LxdCharm(CharmBase):
             )
             return
 
-        # TODO: in cluster mode, only the leader will have handle the received cert
+        # In cluster mode, only the leader needs to handle the received cert
+        if self._stored.lxd_clustered and not self.unit.is_leader():
+            return
+
         d = event.relation.data[event.unit]
         version = d.get("version")
 
@@ -591,9 +594,14 @@ class LxdCharm(CharmBase):
             "addresses": "".join(client.host_info["environment"]["addresses"]),
         }
 
-        # Reply with the info of the server/cluster
-        event.relation.data[self.unit].update(d)
-        logger.debug(f"Connection information sent to {event.unit.name}")
+        # In cluster mode, put the info in the app data bag
+        # otherwise put it in the unit data bag
+        if self._stored.lxd_clustered:
+            event.relation.data[self.app].update(d)
+            logger.debug(f"Connection information put in {self.app.name}")
+        else:
+            event.relation.data[self.unit].update(d)
+            logger.debug(f"Connection information put in {self.unit.name}")
 
     def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
         """Remove the client certificate of the departed unit.
