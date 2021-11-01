@@ -9,3 +9,4 @@ parts:
       - cargo
       - libffi-dev
       - libssl-dev
+      - python3-dev
