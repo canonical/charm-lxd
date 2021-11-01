@@ -36,6 +36,7 @@ options:
   snap-config-ceph-builtin:
     type: boolean
     description: Use snap-specific ceph configuration
+    default: true
   snap-config-ceph-external:
     type: boolean
     description: Use the system's ceph tools (ignores snap-config-ceph-builtin)
