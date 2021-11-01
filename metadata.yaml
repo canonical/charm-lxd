@@ -50,3 +50,6 @@ provides:
     interface: lxd-https
   metrics:
     interface: lxd-metrics
+requires:
+  ceph:
+    interface: ceph-client
