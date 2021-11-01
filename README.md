@@ -73,23 +73,6 @@ On some occations, Juju doesn't emit the `cluster_relation_departed` event ([LP:
 
 **Workaround**: connect to another unit and remove the offline/departed unit using `lxc cluster remove --force <hostname of departed unit>`
 
-### Missing leader when in cluster mode
-
-On some occasions, Juju doesn't elect a leader ([LP: #1942354](https://bugs.launchpad.net/bugs/1942354)) or does not transfer the leadership when the leader goes down ([LP: #1947409](https://bugs.launchpad.net/bugs/1947409)).
-
-When such condition occurs, if `mode=cluster`, adding more units is likely to trigger Juju into electing the new unit as the new leader. This has the undesired side-effect of creating a parallel/disjoint cluster instead of joining the existing one.
-
-**Workaround**: in the absence of a leader unit, do not add any more units. Restarting the Juju agent unit on a follower unit might trigger a leader election:
-
-To restart the Juju agent unit and trigger a leader election:
-
-```shell
-juju ssh lxd/XY  # where XY is a follower unit (not a leader)
-sudo systemctl restart jujud-machine-YZ.service  # where YZ is the machine number
-```
-
-This should be done prior to adding more units.
-
 ## Additional information
 
 - [LXD web site](https://linuxcontainers.org/lxd/)
