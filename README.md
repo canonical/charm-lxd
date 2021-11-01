@@ -69,9 +69,9 @@ When in `mode=cluster`, removing the LXD application leader risks taking the who
 
 ### Removing a unit from a cluster might leave the offline member part of the cluster
 
-On some occations, Juju doesn't emit the `cluster_relation_departed` event ([LP: #1947416](https://bugs.launchpad.net/bugs/1947416)) preventing the proper cleanup on the LXD side.
+When force removing a machine/unit, Juju doesn't always emit the `cluster_relation_departed` event ([LP: #1947416](https://bugs.launchpad.net/bugs/1947416)) preventing the proper cleanup on the LXD side.
 
-**Workaround**: connect to another unit and remove the offline/departed unit using `lxc cluster remove --force <hostname of departed unit>`
+**Workaround**: either avoid force removals or do a manual cleanup by connecting to another unit and removing the offline/departed unit using `lxc cluster remove --force <hostname of departed unit>`
 
 ## Additional information
 
