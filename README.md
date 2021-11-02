@@ -59,6 +59,31 @@ To use local storage with one disk of at least `10GiB` as local `ZFS` storage ba
 juju deploy lxd --storage local=10G,1
 ```
 
+To use remote storage, this charm can be related to the [ceph-mon](https://jaas.ai/ceph-mon) charm:
+
+```shell
+juju relate lxd ceph-mon
+```
+
+A Ceph storage pool then needs to be created, first in Ceph and then in LXD. Here's how to create a pool named `foo`:
+
+```shell
+# create the pool on the Ceph cluster
+juju run-action --wait ceph-mon/leader create-pool name=foo app-name=lxd
+
+# then on LXD depending on the mode= setting
+
+# if mode=standalone:
+lxc storage create remote ceph source=foo ceph.user.name=lxd
+
+# if mode=cluster: the pool needs to be created on each cluster
+# members before being created at the cluster level
+lxc storage create remote ceph source=foo --target lxd1
+lxc storage create remote ceph source=foo --target lxd2
+lxc storage create remote ceph source=foo --target lxd3
+lxc storage create remote ceph ceph.user.name=lxd
+```
+
 ## What about feature XYZ?
 
 In general, if something is doable by the LXD API, the charm won't replicate the feature to avoid duplication and other problems like desynchronisation between the charm's view and LXD's view. If however you find a feature that would be a worthwhile addition to the charm, please open an issue or send a pull request.
