@@ -59,6 +59,10 @@ To use local storage with one disk of at least `10GiB` as local `ZFS` storage ba
 juju deploy lxd --storage local=10G,1
 ```
 
+## What about feature XYZ?
+
+In general, if something is doable by the LXD API, the charm won't replicate the feature to avoid duplication and other problems like desynchronisation between the charm's view and LXD's view. If however you find a feature that would be a worthwhile addition to the charm, please open an issue or send a pull request.
+
 ## Known issues
 
 ### Cluster leader removal
