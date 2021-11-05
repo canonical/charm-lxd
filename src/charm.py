@@ -94,6 +94,7 @@ class LxdCharm(CharmBase):
         self.framework.observe(self.on.upgrade_charm, self._on_charm_upgrade)
 
         # Relation event handlers
+        self.framework.observe(self.on.ceph_relation_changed, self._on_ceph_relation_changed)
         self.framework.observe(self.on.cluster_relation_changed, self._on_cluster_relation_changed)
         self.framework.observe(self.on.cluster_relation_created, self._on_cluster_relation_created)
         self.framework.observe(
@@ -344,6 +345,66 @@ class LxdCharm(CharmBase):
 
         # Apply sideloaded resources attached after deployment
         self.resource_sideload()
+
+    def _on_ceph_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Create or update ceph.conf and keyring."""
+        if not self._stored.config["snap-config-ceph-builtin"]:
+            logger.error(
+                "The ceph relation is not usable (snap-config-ceph-builtin=false), "
+                "please update the config and relate again"
+            )
+            return
+
+        if not event.unit:
+            logger.debug("No available data yet")
+            return
+
+        # Get the authentication key (which is the same for every remote unit)
+        key = event.relation.data[event.unit].get("key")
+        if not key:
+            logger.error(f"Missing key in {event.unit.name}")
+            return
+
+        # Get the list of monitor hosts' IPs
+        hosts = []
+        for unit in event.relation.units:
+            # Do as charm-ceph-osd which looks for "ceph-public-address"
+            # and falls back to the "private-address"
+            unit_data = event.relation.data[unit]
+            host = unit_data.get("ceph-public-address") or unit_data.get("private-address")
+            if host:
+                logger.debug(f"Related {event.unit.name} has the IP: {host}")
+                hosts.append(host)
+            else:
+                logger.debug(f"Related {event.unit.name} did not provide any IP")
+
+        if not hosts:
+            logger.error("No monitor IP found in {event.app.name} relation data")
+            return
+
+        # Create the config dir if needed
+        ceph_dir = "/var/snap/lxd/common/ceph"
+        if not os.path.exists(ceph_dir):
+            os.mkdir(ceph_dir)
+
+        # Creds issued by ceph-mon are for the name of the related app (i.e: lxd)
+        ceph_user = self.app.name
+
+        # Save the credentials in the appropriate keyring file
+        keyring = f"{ceph_dir}/ceph.client.{ceph_user}.keyring"
+        if os.path.exists(keyring):
+            os.remove(keyring)
+        old_umask = os.umask(0o077)
+        with open(keyring, "w") as f:
+            f.write(f"[client.{ceph_user}]\n\tkey = {key}\n")
+        os.umask(old_umask)
+
+        # Save a minimal ceph.conf
+        ceph_conf = f"{ceph_dir}/ceph.conf"
+        with open(ceph_conf, "w") as f:
+            f.write(f"[global]\n\tmon host = {' '.join(hosts)}\n")
+
+        logger.debug(f"The unit {self.unit.name} can now interact with Ceph")
 
     def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
         """If not in cluster mode: do nothing.

@@ -1,0 +1,68 @@
+series: focal
+variables:
+  osd-devices: &osd-devices /dev/sdc
+  expected-osd-count: &expected-osd-count 5
+  expected-mon-count: &expected-mon-count 3
+machines:
+  "0":
+    # Infrastructure services
+    constraints: tags=cloud-ctrl
+    series: focal
+  "1":
+    # Compute
+    constraints: tags=cloud-compute
+    series: focal
+  "2":
+    # Compute
+    constraints: tags=cloud-compute
+    series: focal
+  "3":
+    # Compute
+    constraints: tags=cloud-compute
+    series: focal
+  "4":
+    # Compute
+    constraints: tags=cloud-compute
+    series: focal
+  "5":
+    # Compute
+    constraints: tags=cloud-compute
+    series: focal
+applications:
+  ceph-mon:
+    charm: ceph-mon
+    options:
+      expected-osd-count: *expected-osd-count
+      monitor-count: *expected-mon-count
+    num_units: 3
+    to:
+    - lxd:0
+    - lxd:0
+    - lxd:0
+  ceph-osd:
+    charm: ceph-osd
+    options:
+      osd-devices: *osd-devices
+    num_units: 5
+    to:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+  lxd:
+    charm: lxd
+    num_units: 5
+    options:
+      mode: cluster
+    to:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+relations:
+- - ceph-osd:mon
+  - ceph-mon:osd
+- - lxd:ceph
+  - ceph-mon:client
