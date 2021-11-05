@@ -53,3 +53,4 @@ provides:
 requires:
   ceph:
     interface: ceph-client
+    optional: true
