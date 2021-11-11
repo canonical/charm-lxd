@@ -379,7 +379,7 @@ class LxdCharm(CharmBase):
                 logger.debug(f"Related {event.unit.name} did not provide any IP")
 
         if not hosts:
-            logger.error("No monitor IP found in {event.app.name} relation data")
+            logger.error(f"No monitor IP found in {event.app.name} relation data")
             return
 
         # Create the config dir if needed
