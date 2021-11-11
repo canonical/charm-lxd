@@ -69,6 +69,7 @@ class LxdCharm(CharmBase):
         # Initialize the persistent storage if needed
         self._stored.set_default(
             addresses={},
+            ovn_certificates_present=False,
             config={},
             lxd_binary_path=None,
             lxd_clustered=False,
@@ -472,7 +473,14 @@ class LxdCharm(CharmBase):
             f.write(key)
         os.umask(old_umask)
 
+        self._stored.ovn_certificates_present = True
         logger.debug(f"PKI files required to connect to OVN using SSL saved to {ovn_dir}")
+
+        # If we were previously waiting on a certificates relation we should now unblock
+        if isinstance(self.unit.status, BlockedStatus) and "'certificates' missing" in str(
+            self.unit.status
+        ):
+            self.unit_active()
 
     def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
         """If not in cluster mode: do nothing.
@@ -772,6 +780,10 @@ class LxdCharm(CharmBase):
 
         db = ",".join(sorted(hosts))
         logger.info(f"ovn-central DB connection: {db}")
+
+        # For OVN to be usable, we need the PKI files to connect to it
+        if not self._stored.ovn_certificates_present:
+            self.unit_blocked("'certificates' missing")
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
