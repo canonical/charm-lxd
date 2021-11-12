@@ -105,6 +105,9 @@ class LxdCharm(CharmBase):
         )
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
+        self.framework.observe(
+            self.on.ovsdb_cms_relation_changed, self._on_ovsdb_cms_relation_changed
+        )
 
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
         """Retrieve and add a client certificate to the trusted list."""
@@ -737,6 +740,38 @@ class LxdCharm(CharmBase):
         """
         to_delete = f"juju-relation-{self.model.name}-{event.unit.name}:autoremove"
         self.lxd_trust_remove(name=to_delete)
+
+    def _on_ovsdb_cms_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Assemble a DB connection string to connect to OVN."""
+        if not self._stored.config["snap-config-ovn-builtin"]:
+            logger.error(
+                "The ovsdb-cms relation is not usable (snap-config-ovn-builtin=false), "
+                "please update the config and relate again"
+            )
+            return
+
+        # Get the list of ovn-central hosts' IPs
+        hosts = []
+        for unit in event.relation.units:
+            unit_data = event.relation.data[unit]
+            host = unit_data.get("bound-address")
+            if host:
+                host = host.replace('"', "", 2)
+                if ":" in host:
+                    host = f"[{host}]"
+                # OVN Northbound DB hosts listen with SSL on port 6641
+                host = f"ssl:{host}:6641"
+                hosts.append(host)
+                logger.debug(f"Related {event.unit.name} is reachable at: {host}")
+            else:
+                logger.debug(f"Related {event.unit.name} did not provide any IP")
+
+        if not hosts:
+            logger.error(f"No ovn-central IP found in {event.app.name} relation data")
+            return
+
+        db = ",".join(sorted(hosts))
+        logger.info(f"ovn-central DB connection: {db}")
 
     def config_changed(self) -> dict:
         """Figure out what changed."""

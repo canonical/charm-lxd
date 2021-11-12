@@ -56,3 +56,5 @@ requires:
     optional: true
   certificates:
     interface: tls-certificates
+  ovsdb-cms:
+    interface: ovsdb-cms
