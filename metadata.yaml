@@ -54,3 +54,5 @@ requires:
   ceph:
     interface: ceph-client
     optional: true
+  certificates:
+    interface: tls-certificates

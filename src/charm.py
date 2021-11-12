@@ -95,6 +95,9 @@ class LxdCharm(CharmBase):
 
         # Relation event handlers
         self.framework.observe(self.on.ceph_relation_changed, self._on_ceph_relation_changed)
+        self.framework.observe(
+            self.on.certificates_relation_changed, self._on_certificates_relation_changed
+        )
         self.framework.observe(self.on.cluster_relation_changed, self._on_cluster_relation_changed)
         self.framework.observe(self.on.cluster_relation_created, self._on_cluster_relation_created)
         self.framework.observe(
@@ -405,6 +408,68 @@ class LxdCharm(CharmBase):
             f.write(f"[global]\n\tmon host = {' '.join(hosts)}\n")
 
         logger.debug(f"The unit {self.unit.name} can now interact with Ceph")
+
+    def _on_certificates_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Retrieve and save the PKI files required to connect to OVN using SSL."""
+        if not event.unit:
+            logger.debug("event.unit is not set")
+            return
+
+        d = event.relation.data[event.unit]
+        ca = d.get("ca")
+        cert = d.get("client.cert")
+        key = d.get("client.key")
+
+        if not ca or not cert or not key:
+            logger.error(f"Missing ca, cert and/or key in {event.unit.name}")
+            return
+
+        # The received PEMs needs to be mangled to be able to split()
+        # on spaces without breaking the "-----BEGIN CERTIFICATE-----"
+        # and "-----END CERTIFICATE-----" lines
+        ca = (
+            "\n".join(ca.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
+                "CERTIFICATE", " CERTIFICATE", 2
+            )
+            + "\n"
+        )
+        cert = (
+            "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
+                "CERTIFICATE", " CERTIFICATE", 2
+            )
+            + "\n"
+        )
+        key = (
+            "\n".join(key.replace(" RSA PRIVATE KEY", "RSA_PRIVATE_KEY", 2).split()).replace(
+                "RSA_PRIVATE_KEY", " RSA PRIVATE KEY", 2
+            )
+            + "\n"
+        )
+
+        # Create the config dir if needed
+        ovn_dir = "/var/snap/lxd/common/ovn"
+        if not os.path.exists(ovn_dir):
+            os.mkdir(ovn_dir)
+
+        # Reuse Openstack file names
+        ca_crt = f"{ovn_dir}/ovn-central.crt"
+        with open(ca_crt, "w") as f:
+            f.write(ca)
+
+        cert_host = f"{ovn_dir}/cert_host"
+        with open(cert_host, "w") as f:
+            f.write(cert)
+
+        # Save the credentials in the appropriate keyring file
+        key_host = f"{ovn_dir}/key_host"
+        if os.path.exists(key_host):
+            os.remove(key_host)
+        old_umask = os.umask(0o077)
+        with open(key_host, "w") as f:
+            f.write(key)
+        os.umask(old_umask)
+
+        logger.debug(f"PKI files required to connect to OVN using SSL saved to {ovn_dir}")
 
     def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
         """If not in cluster mode: do nothing.
