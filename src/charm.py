@@ -69,6 +69,7 @@ class LxdCharm(CharmBase):
         # Initialize the persistent storage if needed
         self._stored.set_default(
             addresses={},
+            ovn_certificates_present=False,
             config={},
             lxd_binary_path=None,
             lxd_clustered=False,
@@ -95,6 +96,9 @@ class LxdCharm(CharmBase):
 
         # Relation event handlers
         self.framework.observe(self.on.ceph_relation_changed, self._on_ceph_relation_changed)
+        self.framework.observe(
+            self.on.certificates_relation_changed, self._on_certificates_relation_changed
+        )
         self.framework.observe(self.on.cluster_relation_changed, self._on_cluster_relation_changed)
         self.framework.observe(self.on.cluster_relation_created, self._on_cluster_relation_created)
         self.framework.observe(
@@ -102,6 +106,9 @@ class LxdCharm(CharmBase):
         )
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
+        self.framework.observe(
+            self.on.ovsdb_cms_relation_changed, self._on_ovsdb_cms_relation_changed
+        )
 
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
         """Retrieve and add a client certificate to the trusted list."""
@@ -406,6 +413,75 @@ class LxdCharm(CharmBase):
 
         logger.debug(f"The unit {self.unit.name} can now interact with Ceph")
 
+    def _on_certificates_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Retrieve and save the PKI files required to connect to OVN using SSL."""
+        if not event.unit:
+            logger.debug("event.unit is not set")
+            return
+
+        d = event.relation.data[event.unit]
+        ca = d.get("ca")
+        cert = d.get("client.cert")
+        key = d.get("client.key")
+
+        if not ca or not cert or not key:
+            logger.error(f"Missing ca, cert and/or key in {event.unit.name}")
+            return
+
+        # The received PEMs needs to be mangled to be able to split()
+        # on spaces without breaking the "-----BEGIN CERTIFICATE-----"
+        # and "-----END CERTIFICATE-----" lines
+        ca = (
+            "\n".join(ca.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
+                "CERTIFICATE", " CERTIFICATE", 2
+            )
+            + "\n"
+        )
+        cert = (
+            "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
+                "CERTIFICATE", " CERTIFICATE", 2
+            )
+            + "\n"
+        )
+        key = (
+            "\n".join(key.replace(" RSA PRIVATE KEY", "RSA_PRIVATE_KEY", 2).split()).replace(
+                "RSA_PRIVATE_KEY", " RSA PRIVATE KEY", 2
+            )
+            + "\n"
+        )
+
+        # Create the config dir if needed
+        ovn_dir = "/var/snap/lxd/common/ovn"
+        if not os.path.exists(ovn_dir):
+            os.mkdir(ovn_dir)
+
+        # Reuse Openstack file names
+        ca_crt = f"{ovn_dir}/ovn-central.crt"
+        with open(ca_crt, "w") as f:
+            f.write(ca)
+
+        cert_host = f"{ovn_dir}/cert_host"
+        with open(cert_host, "w") as f:
+            f.write(cert)
+
+        # Save the credentials in the appropriate keyring file
+        key_host = f"{ovn_dir}/key_host"
+        if os.path.exists(key_host):
+            os.remove(key_host)
+        old_umask = os.umask(0o077)
+        with open(key_host, "w") as f:
+            f.write(key)
+        os.umask(old_umask)
+
+        self._stored.ovn_certificates_present = True
+        logger.debug(f"PKI files required to connect to OVN using SSL saved to {ovn_dir}")
+
+        # If we were previously waiting on a certificates relation we should now unblock
+        if isinstance(self.unit.status, BlockedStatus) and "'certificates' missing" in str(
+            self.unit.status
+        ):
+            self.unit_active()
+
     def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
         """If not in cluster mode: do nothing.
 
@@ -672,6 +748,42 @@ class LxdCharm(CharmBase):
         """
         to_delete = f"juju-relation-{self.model.name}-{event.unit.name}:autoremove"
         self.lxd_trust_remove(name=to_delete)
+
+    def _on_ovsdb_cms_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Assemble a DB connection string to connect to OVN."""
+        if not self._stored.config["snap-config-ovn-builtin"]:
+            logger.error(
+                "The ovsdb-cms relation is not usable (snap-config-ovn-builtin=false), "
+                "please update the config and relate again"
+            )
+            return
+
+        # Get the list of ovn-central hosts' IPs
+        hosts = []
+        for unit in event.relation.units:
+            unit_data = event.relation.data[unit]
+            host = unit_data.get("bound-address")
+            if host:
+                host = host.replace('"', "", 2)
+                if ":" in host:
+                    host = f"[{host}]"
+                # OVN Northbound DB hosts listen with SSL on port 6641
+                host = f"ssl:{host}:6641"
+                hosts.append(host)
+                logger.debug(f"Related {event.unit.name} is reachable at: {host}")
+            else:
+                logger.debug(f"Related {event.unit.name} did not provide any IP")
+
+        if not hosts:
+            logger.error(f"No ovn-central IP found in {event.app.name} relation data")
+            return
+
+        db = ",".join(sorted(hosts))
+        logger.info(f"ovn-central DB connection: {db}")
+
+        # For OVN to be usable, we need the PKI files to connect to it
+        if not self._stored.ovn_certificates_present:
+            self.unit_blocked("'certificates' missing")
 
     def config_changed(self) -> dict:
         """Figure out what changed."""

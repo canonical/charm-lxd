@@ -67,6 +67,10 @@ options:
   snap-config-openvswitch-builtin:
     type: boolean
     description: Run a snap-specific OVS daemon
+  snap-config-ovn-builtin:
+    type: boolean
+    description: Use snap-specific OVN configuration
+    default: true
   snap-config-shiftfs-enable:
     type: string
     description: Enable shiftfs support
