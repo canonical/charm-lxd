@@ -591,7 +591,7 @@ class LxdCharm(CharmBase):
             self.lxd_cluster_join(token, member_config)
 
             # Remove our hostname from our unit data bag to signify
-            # we no loger need a join token to be emitted
+            # we no longer need a join token to be emitted
             _ = event.relation.data[self.unit].pop("hostname", None)
 
             logger.debug(f"The unit {self.unit.name} is now part of the cluster")
@@ -1194,7 +1194,7 @@ class LxdCharm(CharmBase):
                     # XXX: prevent the creation of another parallel cluster by checking if there is
                     # already an app data bag (self.model.get_relation("cluster").data[self.app])
 
-                    # Enable clustring if needed
+                    # Enable clustering if needed
                     if self.unit.is_leader():
                         self.unit_maintenance("Enabling cluster mode")
                         subprocess.run(
