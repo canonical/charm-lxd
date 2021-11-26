@@ -343,6 +343,10 @@ class LxdCharm(CharmBase):
         # following the upgrade-charm event.
         changed = self.config_changed()
         for k, v in changed.items():
+            # lxd-listen-* keys can be toggled at any time
+            if k.startswith("lxd-listen-"):
+                continue
+
             if k.startswith("lxd-"):
                 logger.warning(
                     f'The new "{k}" key won\'t be applied to existing units '
