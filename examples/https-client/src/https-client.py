@@ -140,7 +140,7 @@ class HttpsClientCharm(CharmBase):
             logger.debug(f"{remote_unit} is part of a known cluster, nothing to do")
             return
 
-        for bag in [event.app, event.unit]:
+        for bag in (event.app, event.unit):
             if not bag:
                 continue
 
