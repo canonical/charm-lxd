@@ -163,7 +163,7 @@ class LxdCharm(CharmBase):
             logger.error(msg)
             return
 
-        if self.lxd_trust_add(autoremove=False, cert=cert, name=name, projects=projects):
+        if self.lxd_trust_add(cert=cert, name=name, projects=projects):
             msg = "The client certificate is now trusted"
             if projects:
                 msg += f" for the following project(s): {projects}"
@@ -714,7 +714,7 @@ class LxdCharm(CharmBase):
         if autoremove:
             name += ":autoremove"
 
-        if self.lxd_trust_add(autoremove=autoremove, cert=cert, name=name, projects=projects):
+        if self.lxd_trust_add(cert=cert, name=name, projects=projects):
             msg = "The client certificate is now trusted"
             if projects:
                 msg += f" for the following project(s): {projects}"
@@ -1303,9 +1303,7 @@ class LxdCharm(CharmBase):
         self._stored.addresses[listener] = addr
         return True
 
-    def lxd_trust_add(
-        self, autoremove: bool, cert: str, name: str, projects: Optional[str]
-    ) -> bool:
+    def lxd_trust_add(self, cert: str, name: str, projects: Optional[str]) -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
         cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
@@ -1337,7 +1335,7 @@ class LxdCharm(CharmBase):
 
         # If no fingerprint was provided, enumerate all certs looking for one with a matching
         # name with or without a ":autoremove" suffix
-        possible_names = [name, f"{name}:autoremove"]
+        possible_names = (name, f"{name}:autoremove")
         if not fingerprint:
             for c in client.certificates.all():
                 if c.name in possible_names:
