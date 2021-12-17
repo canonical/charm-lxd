@@ -1336,8 +1336,8 @@ class LxdCharm(CharmBase):
 
         # If no fingerprint was provided, enumerate all certs looking for one with a matching
         # name with or without a ":autoremove" suffix
-        possible_names = (name, f"{name}:autoremove")
         if not fingerprint:
+            possible_names = (name, f"{name}:autoremove")
             for c in client.certificates.all():
                 if c.name in possible_names:
                     fingerprint = c.fingerprint
