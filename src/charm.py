@@ -844,7 +844,11 @@ class LxdCharm(CharmBase):
         If require_ipv4 is True, return the first IPv4 available
         in the network space, if any, an emtpy string otherwise.
         """
-        net = self.model.get_binding(space_name).network
+        binding = self.model.get_binding(space_name)
+        if not binding:
+            return ""
+
+        net = binding.network
 
         if not require_ipv4:
             return str(net.ingress_address)
