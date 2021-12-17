@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from typing import Optional
+from typing import Optional, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -192,7 +192,7 @@ class LxdCharm(CharmBase):
         """Show the currently pending configuration changes (queued for after the reboot)."""
         event.set_results({"pending": self.config_changed()})
 
-    def _on_charm_config_changed(self, event: ConfigChangedEvent) -> None:
+    def _on_charm_config_changed(self, event: Union[ConfigChangedEvent, StartEvent]) -> None:
         """React to configuration changes.
 
         Some configuration items can be set only once
