@@ -73,7 +73,6 @@ class LxdCharm(CharmBase):
             lxd_binary_path=None,
             lxd_clustered=False,
             lxd_initialized=False,
-            lxd_installed=False,
             lxd_snap_path=None,
             reboot_required=False,
         )
@@ -281,7 +280,6 @@ class LxdCharm(CharmBase):
         # Install LXD itself
         try:
             self.snap_install_lxd()
-            self._stored.lxd_installed = True
             logger.info("LXD installed successfully")
         except RuntimeError:
             logger.error("Failed to install LXD")
