@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from typing import Optional, Union
+from typing import Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -967,7 +967,7 @@ class LxdCharm(CharmBase):
         # Persist the configuration
         self._stored.config["kernel-hardening"] = config
 
-    def lxd_cluster_add_token(self, hostname: str) -> Optional[str]:
+    def lxd_cluster_add_token(self, hostname: str) -> str:
         """Add/issue a join token for `hostname`."""
         c = subprocess.run(
             ["lxc", "cluster", "add", hostname],
@@ -981,12 +981,12 @@ class LxdCharm(CharmBase):
                 f'The command "lxc cluster add {hostname}" did not produce '
                 f"any output (rc={c.returncode})"
             )
-            return None
+            return ""
 
         try:
             token = c.stdout.splitlines()[1]
         except IndexError:
-            return None
+            return ""
 
         return token
 
@@ -1304,7 +1304,7 @@ class LxdCharm(CharmBase):
         self._stored.addresses[listener] = addr
         return True
 
-    def lxd_trust_add(self, cert: str, name: str, projects: Optional[str]) -> bool:
+    def lxd_trust_add(self, cert: str, name: str, projects: str = "") -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
         cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
@@ -1323,8 +1323,8 @@ class LxdCharm(CharmBase):
 
     def lxd_trust_remove(
         self,
-        name: Optional[str] = None,
-        fingerprint: Optional[str] = None,
+        name: str = "",
+        fingerprint: str = "",
         opportunistic: bool = False,
     ) -> bool:
         """Remove a client certificate from the trusted list."""
