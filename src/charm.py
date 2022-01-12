@@ -707,7 +707,7 @@ class LxdCharm(CharmBase):
 
         projects = d.get("projects")
 
-        name = f"juju-relation-{self.model.name}-{event.unit.name}"
+        name = f"juju-relation-{event.unit.name}"
 
         # Unconditionally remove the cert (ignoring the :autoremove suffix) prior to adding it
         self.lxd_trust_remove(name, opportunistic=True)
@@ -750,7 +750,7 @@ class LxdCharm(CharmBase):
         Look through all the certificate to see if one matches the name of
         the departed unit and with the ":autoremove" suffix.
         """
-        to_delete = f"juju-relation-{self.model.name}-{event.unit.name}:autoremove"
+        to_delete = f"juju-relation-{event.unit.name}:autoremove"
         self.lxd_trust_remove(name=to_delete)
 
     def _on_ovsdb_cms_relation_changed(self, event: RelationChangedEvent) -> None:
