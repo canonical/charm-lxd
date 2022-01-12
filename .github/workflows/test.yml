@@ -6,7 +6,7 @@ on:
 
 jobs:
   test:
-    name: Build charm
+    name: Juju tests
     runs-on: ubuntu-20.04
     steps:
     - name: Checkout
@@ -62,18 +62,18 @@ jobs:
         juju status --relations
 
         # confirm lxd now trusts the client cert
-        juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-.+-https-client/[0-9]+,"
+        juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
 
         # toggle the autoremove config and check if lxd's side is updated
         juju config https-client autoremove=true
         juju wait
-        juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-.+-https-client/[0-9]+:autoremove,"
+        juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+:autoremove,"
 
         # removing the https-client application will break the
         # relation causing the removal of the cert
         juju remove-application https-client
         juju wait
-        ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-.+-https-client/[0-9]+:autoremove,"
+        ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+:autoremove,"
         juju status --relations
 
     - name: Scale the number of lxd units
