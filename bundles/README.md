@@ -12,6 +12,10 @@ At the end of a successful deployment, LXD will need to be configured to interac
 
 [lxd-and-ovn.yaml](bundles/lxd-and-ovn.yaml) can be used to setup a cluster of 5 machines each running a LXD instance and an OVN dedicated chassis. On top of that, 3 machines will have an additional charm: OVN central. A separated/additional machine will run 2 containers to host a PostgreSQL DB used by Vault. At the end of a successful deployment, LXD will be able to interact with OVN.
 
+## Integration between LXD and Prometheus2
+
+[lxd-and-prometheus2.yaml](bundles/lxd-and-prometheus2.yaml) can be used to setup a LXD cluster of 3 machines along with a Prometheus2 machine that will scrape the metrics endpoint of each of the LXD machines.
+
 ## Integration between LXD, OVN and Ceph
 
 [all-in-one.yaml](bundles/all-in-one.yaml) can be used to setup a cluster of 5 machines each running a LXD instance colocated with a Ceph OSD and an OVN dedicated chassis. On top of that, 3 machines will have an additional charm: OVN central. A separated/additional machine will run 2 containers to host a PostgreSQL DB used by Vault and 3 additional containers each running a Ceph monitor.
