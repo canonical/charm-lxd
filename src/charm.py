@@ -43,7 +43,6 @@ SYSCTL_CONFIGS = {
     "kernel.dmesg_restrict": 1,
     "kernel.keys.maxbytes": 2000000,
     "kernel.keys.maxkeys": 2000,
-    "net.core.bpf_jit_limit": 3000000000,
     "net.ipv4.neigh.default.gc_thresh3": 8192,
     "net.ipv6.neigh.default.gc_thresh3": 8192,
     "vm.max_map_count": 262144,
