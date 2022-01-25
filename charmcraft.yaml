@@ -10,3 +10,6 @@ parts:
       - libffi-dev
       - libssl-dev
       - python3-dev
+      - rustc
+    charm-python-packages:
+      - setuptools < 58
