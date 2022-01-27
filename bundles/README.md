@@ -8,7 +8,7 @@ The [bundles/](bundles/) directory contains various [Juju bundles](https://juju.
 
 ## Integration between LXD and OVN
 
-[lxd-and-ovn.yaml](bundles/lxd-and-ovn.yaml) can be used to setup a cluster of 5 machines each running a LXD instance and an OVN dedicated chassis. On top of that, 3 machines will have an additional charm: OVN central. A separated/additional machine will run 2 containers to host a PostgreSQL DB used by Vault.
+[lxd-and-ovn.yaml](bundles/lxd-and-ovn.yaml) can be used to setup a cluster of 5 machines each running a LXD instance and an OVN dedicated chassis. On top of that, 3 machines will have an additional charm: OVN central. A separated/additional machine will run 2 containers to host a PostgreSQL DB used by Vault. At the end of a successful deployment, LXD will be able to interact with OVN.
 
 ## Integration between LXD, OVN and Ceph
 
