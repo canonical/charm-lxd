@@ -759,6 +759,11 @@ class LxdCharm(CharmBase):
             )
             return
 
+        # For OVN to be usable, we need the PKI files to connect to it
+        if not self._stored.ovn_certificates_present:
+            self.unit_blocked("'certificates' missing")
+            return
+
         # Get the list of ovn-central hosts' IPs
         hosts = []
         for unit in event.relation.units:
@@ -780,11 +785,16 @@ class LxdCharm(CharmBase):
             return
 
         db = ",".join(sorted(hosts))
-        logger.info(f"ovn-central DB connection: {db}")
 
-        # For OVN to be usable, we need the PKI files to connect to it
-        if not self._stored.ovn_certificates_present:
-            self.unit_blocked("'certificates' missing")
+        # Configuring LXD to connect to ovn-central DB
+        cmd = ["lxc", "config", "set", f"network.ovn.northbound_connection={db}"]
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            return
+
+        logger.info(f"LXD is now connected to ovn-central DB (NB connection={db})")
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
