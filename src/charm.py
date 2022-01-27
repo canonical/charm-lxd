@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from typing import Optional, Union
+from typing import Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -73,7 +73,6 @@ class LxdCharm(CharmBase):
             lxd_binary_path=None,
             lxd_clustered=False,
             lxd_initialized=False,
-            lxd_installed=False,
             lxd_snap_path=None,
             reboot_required=False,
         )
@@ -281,7 +280,6 @@ class LxdCharm(CharmBase):
         # Install LXD itself
         try:
             self.snap_install_lxd()
-            self._stored.lxd_installed = True
             logger.info("LXD installed successfully")
         except RuntimeError:
             logger.error("Failed to install LXD")
@@ -844,7 +842,11 @@ class LxdCharm(CharmBase):
         If require_ipv4 is True, return the first IPv4 available
         in the network space, if any, an emtpy string otherwise.
         """
-        net = self.model.get_binding(space_name).network
+        binding = self.model.get_binding(space_name)
+        if not binding:
+            return ""
+
+        net = binding.network
 
         if not require_ipv4:
             return str(net.ingress_address)
@@ -965,7 +967,7 @@ class LxdCharm(CharmBase):
         # Persist the configuration
         self._stored.config["kernel-hardening"] = config
 
-    def lxd_cluster_add_token(self, hostname: str) -> Optional[str]:
+    def lxd_cluster_add_token(self, hostname: str) -> str:
         """Add/issue a join token for `hostname`."""
         c = subprocess.run(
             ["lxc", "cluster", "add", hostname],
@@ -979,12 +981,12 @@ class LxdCharm(CharmBase):
                 f'The command "lxc cluster add {hostname}" did not produce '
                 f"any output (rc={c.returncode})"
             )
-            return None
+            return ""
 
         try:
             token = c.stdout.splitlines()[1]
         except IndexError:
-            return None
+            return ""
 
         return token
 
@@ -1302,7 +1304,7 @@ class LxdCharm(CharmBase):
         self._stored.addresses[listener] = addr
         return True
 
-    def lxd_trust_add(self, cert: str, name: str, projects: Optional[str]) -> bool:
+    def lxd_trust_add(self, cert: str, name: str, projects: str = "") -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
         cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
@@ -1321,8 +1323,8 @@ class LxdCharm(CharmBase):
 
     def lxd_trust_remove(
         self,
-        name: Optional[str] = None,
-        fingerprint: Optional[str] = None,
+        name: str = "",
+        fingerprint: str = "",
         opportunistic: bool = False,
     ) -> bool:
         """Remove a client certificate from the trusted list."""
@@ -1334,8 +1336,8 @@ class LxdCharm(CharmBase):
 
         # If no fingerprint was provided, enumerate all certs looking for one with a matching
         # name with or without a ":autoremove" suffix
-        possible_names = (name, f"{name}:autoremove")
         if not fingerprint:
+            possible_names = (name, f"{name}:autoremove")
             for c in client.certificates.all():
                 if c.name in possible_names:
                     fingerprint = c.fingerprint
