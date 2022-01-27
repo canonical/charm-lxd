@@ -759,6 +759,11 @@ class LxdCharm(CharmBase):
             )
             return
 
+        # For OVN to be usable, we need the PKI files to connect to it
+        if not self._stored.ovn_certificates_present:
+            self.unit_blocked("'certificates' missing")
+            return
+
         # Get the list of ovn-central hosts' IPs
         hosts = []
         for unit in event.relation.units:
@@ -781,10 +786,6 @@ class LxdCharm(CharmBase):
 
         db = ",".join(sorted(hosts))
         logger.info(f"ovn-central DB connection: {db}")
-
-        # For OVN to be usable, we need the PKI files to connect to it
-        if not self._stored.ovn_certificates_present:
-            self.unit_blocked("'certificates' missing")
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
