@@ -752,6 +752,16 @@ class LxdCharm(CharmBase):
 
     def _on_ovsdb_cms_relation_changed(self, event: RelationChangedEvent) -> None:
         """Assemble a DB connection string to connect to OVN."""
+        # Check if LXD can interact with OVN networks
+        client = pylxd.Client()
+        if not client.has_api_extension("network_type_ovn"):
+            logger.error(
+                "LXD is missing the network_type_ovn API extension so the ovsdb-cms relation"
+                " is not usable"
+            )
+            return
+
+        # Ensure builtin OVN tooling is used
         if not self._stored.config["snap-config-ovn-builtin"]:
             logger.error(
                 "The ovsdb-cms relation is not usable (snap-config-ovn-builtin=false), "
