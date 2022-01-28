@@ -59,7 +59,7 @@ To use local storage with one disk of at least `10GiB` as local `ZFS` storage ba
 juju deploy lxd --storage local=10G,1
 ```
 
-To use remote storage, this charm can be related to the [ceph-mon](https://jaas.ai/ceph-mon) charm:
+To use remote storage, this charm can be related to the [ceph-mon](https://charmhub.io/ceph-mon) charm:
 
 ```shell
 juju relate lxd ceph-mon
