@@ -93,7 +93,10 @@ class HttpsClientCharm(CharmBase):
                 "req",
                 "-x509",
                 "-newkey",
-                "rsa:2048",
+                "ec",
+                "-pkeyopt",
+                "ec_paramgen_curve:secp384r1",
+                "-sha384",
                 "-keyout",
                 "client.key",
                 "-out",
@@ -101,6 +104,8 @@ class HttpsClientCharm(CharmBase):
                 "-nodes",
                 "-subj",
                 f"/CN={self.unit.name.replace('/', '-')}",
+                "-days",
+                "3650",
             ]
             try:
                 subprocess.run(cmd, capture_output=True, check=True)
