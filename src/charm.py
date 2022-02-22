@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-from typing import Union
+from typing import List, Tuple, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -106,6 +106,13 @@ class LxdCharm(CharmBase):
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
         self.framework.observe(
             self.on.ovsdb_cms_relation_changed, self._on_ovsdb_cms_relation_changed
+        )
+        self.framework.observe(
+            self.on.prometheus_manual_relation_changed, self._on_prometheus_manual_relation_changed
+        )
+        self.framework.observe(
+            self.on.prometheus_manual_relation_departed,
+            self._on_prometheus_manual_relation_departed,
         )
 
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
@@ -223,6 +230,9 @@ class LxdCharm(CharmBase):
 
             # Save the `lxd-listen-<listener>` toggle value
             self._stored.config[toggle_key] = toggle_value
+
+        # Keep the metrics_endpoint data up to date
+        self.lxd_update_prometheus_manual_scrape_job()
 
         # Confirm that the config is valid
         if not self.config_is_valid():
@@ -486,7 +496,7 @@ class LxdCharm(CharmBase):
     def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
         """If not in cluster mode: do nothing.
 
-        * If we are a leader: issue a join token.
+        * If we are a leader: update the prometheus-manual data and issue a join token.
         * If we are a new unit: use the newly minted token to join the cluster.
         """
         # All units automatically get a cluster peer relation irrespective of the mode
@@ -606,6 +616,15 @@ class LxdCharm(CharmBase):
         # so do nothing if not in cluster mode
         if self.config.get("mode") != "cluster":
             return
+
+        # Save our metrics endpoint address for later reuse
+        metrics_endpoint = self.lxd_get_metrics_endpoint()
+        event.relation.data[self.unit].update(
+            {
+                "metrics_endpoint": metrics_endpoint,
+            }
+        )
+        logger.debug(f"Saved metrics endpoint ({metrics_endpoint}) to {self.unit.name}")
 
         # The leader will be the one creating the cluster so no join token needed
         if self.unit.is_leader():
@@ -806,6 +825,40 @@ class LxdCharm(CharmBase):
 
         logger.info(f"LXD is now connected to ovn-central DB (NB connection={db})")
 
+    def _on_prometheus_manual_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Send scrape config job info to Prometheus."""
+        if (
+            not self._stored.config["lxd-listen-https"]
+            and not self._stored.config["lxd-listen-metrics"]
+        ):
+            logger.error(
+                "The prometheus-manual relation is not usable (lxd-listen-https=false and "
+                "lxd-listen-metrics=false), please update the config and relate again"
+            )
+            return
+
+        if event.unit:
+            remote_unit_name = f"{event.unit.name}-metrics:autoremove".replace("/", "_")
+        else:
+            remote_unit_name = ""
+        self.lxd_update_prometheus_manual_scrape_job(remote_unit_name)
+
+    def _on_prometheus_manual_relation_departed(self, event: RelationDepartedEvent) -> None:
+        """Remove any client certificate the departed unit used for metrics scraping.
+
+        Look through all the certificate to see if one matches the name of
+        the departed unit.
+        """
+        if not event.unit:
+            logger.error(
+                "Could not remove the client certificate used for metrics scraping as"
+                " the remote unit is unknown"
+            )
+            return
+
+        to_delete = f"{event.unit.name}-metrics:autoremove".replace("/", "_")
+        self.lxd_trust_remove(name=to_delete)
+
     def config_changed(self) -> dict:
         """Figure out what changed."""
         new_config = self.config
@@ -995,7 +1048,6 @@ class LxdCharm(CharmBase):
             check=False,
             encoding="UTF-8",
         )
-
         if c.returncode != 0 or not c.stdout:
             logger.debug(
                 f'The command "lxc cluster add {hostname}" did not produce '
@@ -1076,6 +1128,212 @@ class LxdCharm(CharmBase):
             )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+
+    def lxd_generate_cert_key_pair(self, name: str) -> Tuple[str, str]:
+        """Generate a certificate and key pair."""
+        if not name:
+            logger.error("The name cannot be empty.")
+            return ("", "")
+
+        if "/" in name:
+            logger.error('The name cannot contain a "/".')
+            return ("", "")
+
+        cmd = [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:secp384r1",
+            "-sha384",
+            "-keyout",
+            "-",
+            "-out",
+            "certificate.crt",
+            "-nodes",
+            "-subj",
+            f"/CN={name}",
+            "-days",
+            "+3650",
+        ]
+        try:
+            c = subprocess.run(
+                cmd,
+                capture_output=True,
+                check=True,
+                encoding="UTF-8",
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            return ("", "")
+
+        # The key data was output to stdout and never touched the disk
+        # but the certificate data needs to be read from the file that
+        # can then be discarded
+        key = c.stdout
+        with open("certificate.crt") as f:
+            cert = f.read()
+        os.remove("certificate.crt")
+
+        return (cert, key)
+
+    def lxd_get_metrics_endpoint(self) -> str:
+        """Get the metrics endpoint.
+
+        First check if there is a dedicated metrics endpoint and fallback to the generic https
+        listener where metrics are also available.
+        """
+        addr = self.juju_space_get_address("metrics") or self.juju_space_get_address("https")
+        if not addr:
+            return ""
+
+        if ":" in addr:
+            addr = f"[{addr}]"
+        return f"{addr}:8443"
+
+    def lxd_get_prometheus_targets(self) -> List[str]:
+        """Return a list of targets to be scraped by Prometheus."""
+        if self.config.get("mode") != "cluster":
+            # The unit's metrics_endpoint is the only target for the scape_job
+            return [self.lxd_get_metrics_endpoint()]
+
+        if not self.unit.is_leader():
+            # The unit is part of a cluster but not the app leader, so nothing to report
+            return []
+
+        if not self._stored.lxd_clustered:
+            # Not clustered yet, no prometheus targets to report.
+            return []
+
+        # At this point, the unit is the app leader so it needs to get the metrics_endpoint
+        # of the other units part of the cluster relation
+        cluster_relation = self.model.get_relation("cluster")
+        if not cluster_relation:
+            logger.error("Missing cluster relation while mode=cluster")
+            return []
+
+        targets: List[str] = []
+        for unit in cluster_relation.units:
+            unit_metrics_endpoint = cluster_relation.data[unit].get("metrics_endpoint")
+            if not unit_metrics_endpoint:
+                logger.error(f"Couldn't obtain {unit.name}'s metrics_endpoint")
+                continue
+            targets.append(unit_metrics_endpoint)
+
+        # If the targets list doesn't match the units count, return an empty list
+        if len(targets) != len(cluster_relation.units):
+            logger.error(
+                f"Only got metrics_endpoint for {len(targets)} units out of the"
+                f" {len(cluster_relation.units)} part of the cluster relation"
+            )
+            return []
+
+        # Add leader's own metrics_endpoint
+        targets.append(self.lxd_get_metrics_endpoint())
+
+        targets.sort()
+        return targets
+
+    def lxd_update_prometheus_manual_scrape_job(self, remote_unit_name: str = "") -> None:
+        """Update the prometheus-manual scrape_job if applicable.
+
+        Nothing to do unless there is a "prometheus-manual" relation.
+
+        If mode=standalone, each unit needs to update its prometheus unit data bag.
+        If mode=cluster, each unit needs to update cluster's unit data bag
+        and only the lxd/leader needs to update the prometheus-manual's unit data bag.
+
+        The remote_unit_name parameter is used to issue a TLS certificate for the prometheus
+        scraper. If not provided, an existing TLS certificate is reused.
+        """
+        prometheus_relation = self.model.get_relation("prometheus-manual")
+        if not prometheus_relation:
+            logger.debug(
+                "No need to update the metrics endpoint as no relation with"
+                " prometheus-manual found"
+            )
+            return
+
+        # Get the targets list which corresponds the units' metrics_endpoint
+        targets = self.lxd_get_prometheus_targets()
+        if not targets:
+            logger.debug(f"{self.unit.name} isn't aware of any targets for prometheus-manual")
+            return
+
+        # Ensure request_id uniqueness
+        if self._stored.lxd_clustered:
+            my_id = self.app.name
+        else:
+            # Replace foo/0 by foo_0 as `openssl req -subj` doesn't like '/'
+            my_id = self.unit.name.replace("/", "_")
+
+        # Include our own model name in the request_id to avoid potential
+        # collisions when doing Cross-Model Relations (CMRs) because the unit
+        # name is not subject to the normal unit name translation done during CMR
+        my_id = f"{self.model.name}_{my_id}"
+        scrape_job_key = f"request_{my_id}"
+
+        # The scrape_job can be generated on the fly with the exception of the
+        # client_cert/client_key that should be preserved.
+        old_scrape_job = prometheus_relation.data[self.unit].get(scrape_job_key)
+        if old_scrape_job:
+            old_data = json.loads(old_scrape_job)
+            client_cert = old_data["client_cert"]
+            client_key = old_data["client_key"]
+        elif remote_unit_name:
+            (client_cert, client_key) = self.lxd_generate_cert_key_pair(remote_unit_name)
+
+            if client_cert:
+                self.lxd_trust_add(
+                    cert=client_cert.encode(),
+                    name=remote_unit_name,
+                    projects="",
+                    metrics=True,
+                )
+        else:
+            logger.error(
+                "Unable to generate a TLS client certificate for the remote unit as no"
+                " name was provided"
+            )
+            return
+
+        if not client_cert or not client_key:
+            logger.error("Invalid/missing TLS certificate for the remote unit")
+            return
+
+        scrape_job = {
+            scrape_job_key: json.dumps(
+                {
+                    "job_name": "lxd",
+                    "request_id": my_id,
+                    "job_data": {
+                        "metrics_path": "/1.0/metrics",
+                        "scheme": "https",
+                        "static_configs": [
+                            {
+                                "targets": targets,
+                            },
+                        ],
+                        "tls_config": {
+                            "insecure_skip_verify": True,
+                        },
+                    },
+                    "client_cert": client_cert,
+                    "client_key": client_key,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        }
+
+        # Compare the old scrape_job with the current one before updating
+        if old_scrape_job != scrape_job[scrape_job_key]:
+            logger.debug(f"Updating Prometheus scrape_job ({scrape_job_key})")
+            prometheus_relation.data[self.unit].update(scrape_job)
+        else:
+            logger.debug(f"Prometheus scrape_job ({scrape_job_key}) already up to date")
 
     def lxd_init(self) -> None:
         """Apply initial configuration of LXD."""
@@ -1324,13 +1582,19 @@ class LxdCharm(CharmBase):
         self._stored.addresses[listener] = addr
         return True
 
-    def lxd_trust_add(self, cert: str, name: str, projects: str = "") -> bool:
+    def lxd_trust_add(
+        self, cert: str, name: str, projects: str = "", metrics: bool = False
+    ) -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
         cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
         if projects:
             msg += f" for projects: {projects}"
             cmd += ["--restricted", "--projects", projects]
+
+        if metrics:
+            msg += " (metrics)"
+            cmd += ["--type=metrics"]
 
         logger.info(msg)
         try:

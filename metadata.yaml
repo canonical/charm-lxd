@@ -50,6 +50,8 @@ provides:
     interface: lxd-https
   metrics:
     interface: lxd-metrics
+  prometheus-manual:
+    interface: prometheus-manual
 requires:
   ceph:
     interface: ceph-client
