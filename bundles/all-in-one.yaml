@@ -66,6 +66,14 @@ applications:
       auto-generate-root-ca-cert: true
       # XXX: insecure, only for testing
       totally-unsecure-auto-unlock: true
+  prometheus2:
+    charm: prometheus2
+    # requires revision 28 or later hence edge and focal
+    channel: edge
+    series: focal
+    num_units: 1
+    to:
+    - lxd:0
   ovn-central:
     charm: ovn-central
     channel: stable

@@ -18,4 +18,4 @@ At the end of a successful deployment, LXD will need to be configured to interac
 
 ## Integration between LXD, OVN and Ceph
 
-[all-in-one.yaml](bundles/all-in-one.yaml) can be used to setup a cluster of 5 machines each running a LXD instance colocated with a Ceph OSD and an OVN dedicated chassis. On top of that, 3 machines will have an additional charm: OVN central. A separated/additional machine will run 2 containers to host a PostgreSQL DB used by Vault and 3 additional containers each running a Ceph monitor.
+[all-in-one.yaml](bundles/all-in-one.yaml) can be used to setup a cluster of 5 machines each running a LXD instance colocated with a Ceph OSD and an OVN dedicated chassis. On top of that, 3 machines will have an additional charm: OVN central. A separated/additional machine will run: 2 containers to host a PostgreSQL DB used by Vault, 1 container to run Prometheus2 and 3 additional containers each running a Ceph monitor.
