@@ -46,6 +46,8 @@ peers:
 provides:
   bgp:
     interface: lxd-bgp
+  grafana-dashboard:
+    interface: grafana-dashboard
   https:
     interface: lxd-https
   metrics:

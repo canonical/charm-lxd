@@ -102,6 +102,9 @@ class LxdCharm(CharmBase):
         self.framework.observe(
             self.on.cluster_relation_departed, self._on_cluster_relation_departed
         )
+        self.framework.observe(
+            self.on.grafana_dashboard_relation_changed, self._on_grafana_dashboard_relation_changed
+        )
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
         self.framework.observe(
@@ -683,6 +686,82 @@ class LxdCharm(CharmBase):
         )
 
         logger.debug(f"The unit {event.unit.name} is no longer part of the cluster")
+
+    def _on_grafana_dashboard_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Provide the LXD dashboard to Grafana."""
+        # Only one dashboard is needed so let the app leader deal with it
+        if not self.unit.is_leader():
+            return
+
+        # Check if there is an existing relation named "prometheus-manual"
+        prometheus_manual_relation = self.model.get_relation("prometheus-manual")
+        if not prometheus_manual_relation:
+            logger.error(
+                "Missing prometheus-manual relation required by grafana-dashboard relation"
+            )
+            return
+
+        if not prometheus_manual_relation.app.name:
+            logger.error("Missing app.name for prometheus-manual relation")
+            return
+
+        # Load the dashboard
+        dashboard_file = "LXD.json"
+        if not os.path.exists(dashboard_file):
+            logger.error("No LXD dashboard for Grafana was bundled in the charm")
+            return
+
+        with open(dashboard_file) as f:
+            data = f.read()
+            dashboard = json.loads(data)
+
+        # The bundled dashboard should contain:
+        #   "__inputs": [
+        #     {
+        #       "name": "DS_INFRA",
+        #       "label": "infra",
+        #       "description": "",
+        #       "type": "datasource",
+        #       "pluginId": "prometheus",
+        #       "pluginName": "Prometheus"
+        #     }
+        #   ],
+        # and the name value needs to be replaced by the proper datasource name which
+        # is derived from the application name used when Prometheus2 was deployed.
+        ds_prometheus = f'"{prometheus_manual_relation.app.name} - Juju generated source"'
+
+        # Safety checks
+        if "__inputs" not in dashboard or len(dashboard["__inputs"]) != 1:
+            logger.error(f'{dashboard_file} has invalid or missing "__inputs" section')
+            return
+
+        # Get the name of the datasource that will need to be replaced
+        ds_to_replace = dashboard["__inputs"][0].get("name")
+        if not ds_to_replace:
+            logger.error(f"{dashboard_file} is malformed")
+            return
+
+        # Replace the datasource name
+        #   "name": "DS_INFRA"   -> "name": "ds_prometheus"
+        #   "uid": "${DS_INFRA}" -> "uid": "ds_prometheus"
+        data = data.replace('"' + ds_to_replace + '"', ds_prometheus).replace(
+            '"${' + ds_to_replace + '}"', ds_prometheus
+        )
+
+        # Reload the mangled data as JSON
+        dashboard = json.loads(data)
+
+        # Send a compact JSON version of the dashboard to Grafana
+        event.relation.data[self.app].update(
+            {
+                "name": self.app.name.upper(),
+                "dashboard": json.dumps(
+                    dashboard,
+                    separators=(",", ":"),
+                ),
+            }
+        )
+        logger.debug("LXD dashboard sent to Grafana")
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
         """Add the received client certificate to the trusted list."""
