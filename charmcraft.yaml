@@ -13,3 +13,10 @@ parts:
       - rustc
     charm-python-packages:
       - setuptools < 58
+  grafana-dashboard:
+    plugin: dump
+    source: .
+    override-pull: |
+      wget --https-only https://grafana.com/api/dashboards/15726/revisions/latest/download -O LXD.json
+    build-packages:
+      - wget
