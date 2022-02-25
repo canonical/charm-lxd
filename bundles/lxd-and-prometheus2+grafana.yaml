@@ -5,7 +5,7 @@ machines:
     constraints: tags=cloud
     series: focal
   "1":
-    # Compute
+    # Infrastructure services
     constraints: tags=cloud
     series: focal
   "2":
@@ -13,6 +13,10 @@ machines:
     constraints: tags=cloud
     series: focal
   "3":
+    # Compute
+    constraints: tags=cloud
+    series: focal
+  "4":
     # Compute
     constraints: tags=cloud
     series: focal
@@ -25,6 +29,11 @@ applications:
     num_units: 1
     to:
       - 0
+  grafana:
+    charm: grafana
+    num_units: 1
+    to:
+      - 1
   lxd:
     charm: lxd
     options:
@@ -33,9 +42,13 @@ applications:
       mode: cluster
     num_units: 3
     to:
-    - 1
     - 2
     - 3
+    - 4
 relations:
+- - prometheus2:grafana-source
+  - grafana:grafana-source
 - - prometheus2:manual-jobs
   - lxd:prometheus-manual
+- - lxd:grafana-dashboard
+  - grafana:dashboards
