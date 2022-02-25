@@ -124,9 +124,9 @@ relations:
   - vault:certificates
 - - lxd:ovsdb-cms
   - ovn-central:ovsdb-cms
-- - prometheus2:manual-jobs
-  - lxd:prometheus-manual
 - - prometheus2:grafana-source
   - grafana:grafana-source
+- - prometheus2:manual-jobs
+  - lxd:prometheus-manual
 - - lxd:grafana-dashboard
   - grafana:dashboards

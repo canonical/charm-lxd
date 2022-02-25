@@ -46,9 +46,9 @@ applications:
     - 3
     - 4
 relations:
-- - prometheus2:manual-jobs
-  - lxd:prometheus-manual
 - - prometheus2:grafana-source
   - grafana:grafana-source
+- - prometheus2:manual-jobs
+  - lxd:prometheus-manual
 - - lxd:grafana-dashboard
   - grafana:dashboards
