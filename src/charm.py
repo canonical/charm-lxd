@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 from typing import List, Tuple, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -750,6 +751,19 @@ class LxdCharm(CharmBase):
 
         # Reload the mangled data as JSON
         dashboard = json.loads(data)
+
+        # XXX: Introduce an artificial delay before sending the dashboard to
+        # Grafana to give time for the prometheus2:grafana-source relation
+        # to be established. Without that, the injected dashboard shows
+        # as empty requiring manual intervention:
+        # # > remove the relation
+        # juju remove-relation lxd:grafana-dashboard grafana:dashboards
+        # # > log to grafana using the admin password obtained with:
+        # juju run-action --wait grafana/leader get-admin-password
+        # # > delete the bogus LXD dashboard
+        # # > recreate the relation
+        # juju add-relation lxd:grafana-dashboard grafana:dashboards
+        time.sleep(60)
 
         # Send a compact JSON version of the dashboard to Grafana
         event.relation.data[self.app].update(
