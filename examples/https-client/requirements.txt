@@ -1,3 +1,2 @@
-charmhelpers
 git+git://github.com/lxc/pylxd@master#egg=pylxd
 ops >= 1.2.0
