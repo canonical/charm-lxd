@@ -15,25 +15,25 @@ LXD is image based and provides images for a wide number of Linux distributions.
 Follow `Juju`'s [Charmed Operator Lifecycle Manager](https://juju.is/docs/olm) to boostrap your cloud of choice and create a model to host your LXD application. Once done, deploying a LXD unit is as simple as:
 
 ```shell
-juju deploy lxd
+juju deploy ch:lxd
 ```
 
 Or for a set of 4 units using the `4.0/stable` snap with the HTTPS listener enabled:
 
 ```shell
-juju deploy lxd --num-units 4 --config snap-channel="4.0/stable" --config lxd-listen-https=true
+juju deploy ch:lxd --num-units 4 --config snap-channel="4.0/stable" --config lxd-listen-https=true
 ```
 
 Or a unit using local storage as `ZFS` storage backend:
 
 ```shell
-juju deploy lxd --storage local=100G,1
+juju deploy ch:lxd --storage local=100G,1
 ```
 
 Or a cluster of 3 members:
 
 ```shell
-juju deploy lxd --num-units 3 --config mode=cluster
+juju deploy ch:lxd --num-units 3 --config mode=cluster
 ```
 
 ## Resources
@@ -56,7 +56,7 @@ juju attach-resource lxd lxd-snap=lxd_empty.snap
 To use local storage with one disk of at least `10GiB` as local `ZFS` storage backend:
 
 ```shell
-juju deploy lxd --storage local=10G,1
+juju deploy ch:lxd --storage local=10G,1
 ```
 
 To use remote storage, this charm can be related to the [ceph-mon](https://charmhub.io/ceph-mon) charm:
