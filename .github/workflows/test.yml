@@ -28,10 +28,10 @@ jobs:
     - name: Build charms
       run: |
         set -eux
-        sudo -g lxd charmcraft build
+        sudo -g lxd charmcraft pack
 
         # ancillary charm for testing purposes
-        sudo -g lxd charmcraft build --from examples/https-client
+        sudo -g lxd charmcraft pack --project-dir examples/https-client
 
     - name: Bootstrap Juju
       run: |
