@@ -6,27 +6,21 @@ variables:
 machines:
   "0":
     # Infrastructure services
-    constraints: tags=cloud
     series: focal
   "1":
     # Compute
-    constraints: tags=cloud
     series: focal
   "2":
     # Compute
-    constraints: tags=cloud
     series: focal
   "3":
     # Compute
-    constraints: tags=cloud
     series: focal
   "4":
     # Compute
-    constraints: tags=cloud
     series: focal
   "5":
     # Compute
-    constraints: tags=cloud
     series: focal
 applications:
   ceph-mon:

@@ -2,27 +2,21 @@ series: focal
 machines:
   "0":
     # Infrastructure services
-    constraints: tags=cloud-compute
     series: focal
   "1":
     # Compute
-    constraints: tags=cloud-compute
     series: focal
   "2":
     # Compute
-    constraints: tags=cloud-compute
     series: focal
   "3":
     # Compute
-    constraints: tags=cloud-compute
     series: focal
   "4":
     # Compute
-    constraints: tags=cloud-compute
     series: focal
   "5":
     # Compute
-    constraints: tags=cloud-compute
     series: focal
 applications:
   postgresql:
