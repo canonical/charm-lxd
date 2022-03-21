@@ -1637,7 +1637,13 @@ class LxdCharm(CharmBase):
 
         Also save the boolean toggle to enable/disable the listener.
         """
-        if listener not in ("bgp", "https", "metrics"):
+        # default ports
+        ports = {
+            "bgp": 179,
+            "https": 8443,
+            "metrics": 9100,
+        }
+        if not ports.get(listener):
             logger.error(f"Invalid listener ({listener}) provided")
             return False
 
@@ -1673,6 +1679,25 @@ class LxdCharm(CharmBase):
         # Save the addr instead of the socket because it makes it easier
         # to compare with the IP returned by get_binding()
         self._stored.addresses[listener] = addr
+
+        # open/close-port
+        if addr:
+            cmd = ["open-port"]
+        else:
+            cmd = ["close-port"]
+        cmd += [str(ports[listener]), "--endpoints", listener]
+        logger.debug(f"Calling {cmd}")
+
+        try:
+            subprocess.run(
+                cmd,
+                capture_output=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            return False
+
         return True
 
     def lxd_trust_add(
