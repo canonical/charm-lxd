@@ -99,7 +99,7 @@ jobs:
         juju wait
         juju status
 
-    - name: Cleanup standalong lxd units
+    - name: Cleanup standalone lxd units
       run: |
         set -eux
         juju remove-application --force lxd
