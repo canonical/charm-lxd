@@ -918,6 +918,24 @@ class LxdCharm(CharmBase):
 
         logger.info(f"LXD is now connected to ovn-central DB (NB connection={db})")
 
+        # Let OVN know which IP will be used to connect to it
+        bound_address = self.juju_space_get_address("ovsdb-cms")
+        if not bound_address:
+            logger.error("Unable to find the address bounded to ovsdb-cms space")
+            return
+
+        if ":" in bound_address:
+            bound_address = f"[{bound_address}]"
+
+        event.relation.data[self.unit].update(
+            {
+                "cms-client-bound-address": bound_address,
+            }
+        )
+        logger.debug(
+            f"Connection information put in {self.unit.name} (cms-client-bound-address={bound_address})"
+        )
+
     def _on_prometheus_manual_relation_changed(self, event: RelationChangedEvent) -> None:
         """Send scrape config job info to Prometheus."""
         if (
