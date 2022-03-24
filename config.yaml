@@ -9,6 +9,11 @@ options:
     default: false
     description: Enable/disable the BGP endpoint
 
+  lxd-listen-dns:
+    type: boolean
+    default: false
+    description: Enable/disable the authoritative DNS endpoint
+
   lxd-listen-https:
     type: boolean
     default: false
