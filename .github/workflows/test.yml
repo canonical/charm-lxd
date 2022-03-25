@@ -79,15 +79,17 @@ jobs:
     - name: Test opening/closing ports
       run: |
         set -eux
-        # open the bgp and metrics ports
-        juju config lxd lxd-listen-bgp=true lxd-listen-metrics=true
+        # open the dns, bgp and metrics ports
+        juju config lxd lxd-listen-dns=true lxd-listen-bgp=true lxd-listen-metrics=true
         juju wait
-        # check that the bgp, https and metrics ports are opened
-        OPENED_PORTS="$(juju run --unit lxd/leader "opened-ports" | grep -cE '^(179|8443|9100)/tcp$')"
-        [ "$OPENED_PORTS" -eq 3 ]
-        # close the bgp and metrics ports
-        juju config lxd lxd-listen-bgp=false lxd-listen-metrics=false
+        juju status
+        # check that the dns, bgp, https and metrics ports are opened
+        OPENED_PORTS="$(juju run --unit lxd/leader "opened-ports" | grep -cE '^(53|179|8443|9100)/tcp$')"
+        [ "$OPENED_PORTS" -eq 4 ]
+        # close the dns, bgp and metrics ports
+        juju config lxd lxd-listen-dns=false lxd-listen-bgp=false lxd-listen-metrics=false
         juju wait
+        juju status
         # check that only the https port remains opened
         HTTPS_PORT="$(juju run --unit lxd/leader "opened-ports" | grep -E '^[0-9]+/tcp$')"
         [ "$HTTPS_PORT" = "8443/tcp" ]

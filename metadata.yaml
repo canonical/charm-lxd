@@ -45,6 +45,8 @@ peers:
 provides:
   bgp:
     interface: lxd-bgp
+  dns:
+    interface: lxd-dns
   grafana-dashboard:
     interface: grafana-dashboard
   https:

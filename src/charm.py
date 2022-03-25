@@ -214,7 +214,7 @@ class LxdCharm(CharmBase):
 
         # Space binding changes will trigger this event but won't show up in self.config
         # so those need to be processed even when config_changed() returns nothing
-        for listener in ("bgp", "https", "metrics"):
+        for listener in ("bgp", "dns", "https", "metrics"):
             # Check if we should listen
             toggle_key = f"lxd-listen-{listener}"
             toggle_value = self.config.get(toggle_key)
@@ -1658,6 +1658,7 @@ class LxdCharm(CharmBase):
         # default ports
         ports = {
             "bgp": 179,
+            "dns": 53,
             "https": 8443,
             "metrics": 9100,
         }
@@ -1668,6 +1669,7 @@ class LxdCharm(CharmBase):
         # Some listeners require a special API extension
         api_extensions = {
             "bgp": "network_bgp",
+            "dns": "network_dns",
             "metrics": "metrics",
         }
 
