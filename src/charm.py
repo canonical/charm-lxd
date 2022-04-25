@@ -1485,6 +1485,11 @@ class LxdCharm(CharmBase):
             client = pylxd.Client()
             profile = client.profiles.get("default")
 
+            if configure_storage:
+                if client.storage_pools.exists("local"):
+                    logger.debug("Existing storage pool detected")
+                    configure_storage = False
+
             if network_dev:
                 if client.networks.exists(network_dev):
                     logger.debug("Existing network detected")
@@ -1496,17 +1501,20 @@ class LxdCharm(CharmBase):
                     if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
                         src = f"source={self.model.storages['local'][0].location}"
                         self.unit_maintenance("Configuring external storage pool (zfs, {src})")
-                        subprocess.run(
-                            ["lxc", "storage", "create", "local", "zfs", src],
-                            capture_output=True,
-                            check=True,
+                        client.storage_pools.create(
+                            {
+                                "name": "local",
+                                "driver": "zfs",
+                                "source": src,
+                            }
                         )
                     else:
                         self.unit_maintenance("Configuring local storage pool (dir)")
-                        subprocess.run(
-                            ["lxc", "storage", "create", "local", "dir"],
-                            capture_output=True,
-                            check=True,
+                        client.storage_pools.create(
+                            {
+                                "name": "local",
+                                "driver": "dir",
+                            }
                         )
 
                     if not profile.devices.get("root"):
