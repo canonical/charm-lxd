@@ -1485,6 +1485,11 @@ class LxdCharm(CharmBase):
             client = pylxd.Client()
             profile = client.profiles.get("default")
 
+            if network_dev:
+                if client.networks.exists(network_dev):
+                    logger.debug("Existing network detected")
+                    network_dev = ""
+
             try:
                 # Configure the storage
                 if configure_storage:
@@ -1518,32 +1523,20 @@ class LxdCharm(CharmBase):
                             fan_address = self.juju_space_get_address("fan", require_ipv4=True)
                             fan_subnet = ipaddress.IPv4Network(fan_address).supernet(new_prefix=16)
                             logger.debug(f"Using {fan_subnet} as FAN underlay network")
+                            network_config = {
+                                "bridge.mode": "fan",
+                                "fan.underlay_subnet": str(fan_subnet),
+                            }
                         except Exception:
                             msg = "Can't find a valid subnet for FAN, falling back to lxdbr0"
                             self.unit_maintenance(msg)
                             network_dev = "lxdbr0"
+                            network_config = None
+                    else:
+                        network_config = None
 
                     self.unit_maintenance(f"Configuring network bridge ({network_dev})")
-
-                    if network_dev == "lxdfan0":
-                        subprocess.run(
-                            [
-                                "lxc",
-                                "network",
-                                "create",
-                                network_dev,
-                                "bridge.mode=fan",
-                                f"fan.underlay_subnet={fan_subnet}",
-                            ],
-                            capture_output=True,
-                            check=True,
-                        )
-                    else:
-                        subprocess.run(
-                            ["lxc", "network", "create", network_dev],
-                            capture_output=True,
-                            check=True,
-                        )
+                    client.networks.create(network_dev, config=network_config)
 
                     if not profile.devices.get("eth0"):
                         profile.devices["eth0"] = {
