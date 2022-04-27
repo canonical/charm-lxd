@@ -1482,6 +1482,9 @@ class LxdCharm(CharmBase):
                 configure_storage = False
                 network_dev = ""
 
+            client = pylxd.Client()
+            profile = client.profiles.get("default")
+
             try:
                 # Configure the storage
                 if configure_storage:
@@ -1500,21 +1503,13 @@ class LxdCharm(CharmBase):
                             capture_output=True,
                             check=True,
                         )
-                    subprocess.run(
-                        [
-                            "lxc",
-                            "profile",
-                            "device",
-                            "add",
-                            "default",
-                            "root",
-                            "disk",
-                            "pool=local",
-                            "path=/",
-                        ],
-                        capture_output=True,
-                        check=True,
-                    )
+
+                    if not profile.devices.get("root"):
+                        profile.devices["root"] = {
+                            "type": "disk",
+                            "pool": "local",
+                            "path": "/",
+                        }
 
                 # Configure the network
                 if network_dev:
@@ -1550,21 +1545,12 @@ class LxdCharm(CharmBase):
                             check=True,
                         )
 
-                    subprocess.run(
-                        [
-                            "lxc",
-                            "profile",
-                            "device",
-                            "add",
-                            "default",
-                            "eth0",
-                            "nic",
-                            f"network={network_dev}",
-                            "name=eth0",
-                        ],
-                        capture_output=True,
-                        check=True,
-                    )
+                    if not profile.devices.get("eth0"):
+                        profile.devices["eth0"] = {
+                            "type": "nic",
+                            "network": network_dev,
+                            "name": "eth0",
+                        }
 
                 if mode == "cluster":
                     cluster_address = self.juju_space_get_address("cluster")
@@ -1597,6 +1583,9 @@ class LxdCharm(CharmBase):
                             check=True,
                         )
                         self._stored.lxd_clustered = True
+
+                # Persist profile changes
+                profile.save()
 
             except subprocess.CalledProcessError as e:
                 self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
