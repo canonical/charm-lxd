@@ -909,11 +909,13 @@ class LxdCharm(CharmBase):
         db = ",".join(sorted(hosts))
 
         # Configuring LXD to connect to ovn-central DB
-        cmd = ["lxc", "config", "set", f"network.ovn.northbound_connection={db}"]
         try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            conf = client.api.get().json()["metadata"]["config"]
+            if conf.get("network.ovn.northbound_connection") != db:
+                conf["network.ovn.northbound_connection"] = db
+                client.api.put(json={"config": conf})
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to set network.ovn.northbound_connection: {e}")
             return
 
         logger.info(f"LXD is now connected to ovn-central DB (NB connection={db})")
@@ -1074,31 +1076,24 @@ class LxdCharm(CharmBase):
                     no_proxy = v
 
         try:
+            client = pylxd.Client()
+            conf = client.api.get().json()["metadata"]["config"]
+            orig_conf = conf
             if http_proxy:
                 logger.debug(f"Configuring core.proxy_http={http_proxy}")
-                subprocess.run(
-                    ["lxc", "config", "set", "core.proxy_http", http_proxy],
-                    capture_output=True,
-                    check=True,
-                )
-
+                conf["core.proxy_http"] = http_proxy
             if https_proxy:
                 logger.debug(f"Configuring core.proxy_https={https_proxy}")
-                subprocess.run(
-                    ["lxc", "config", "set", "core.proxy_https", https_proxy],
-                    capture_output=True,
-                    check=True,
-                )
+                conf["core.proxy_https"] = https_proxy
             if no_proxy:
                 logger.debug(f"Configuring core.proxy_ignore_hosts={no_proxy}")
-                subprocess.run(
-                    ["lxc", "config", "set", "core.proxy_ignore_hosts", no_proxy],
-                    capture_output=True,
-                    check=True,
-                )
+                conf["core.proxy_ignore_hosts"] = no_proxy
 
-        except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            if conf != orig_conf:
+                client.api.put(json={"config": conf})
+
+        except pylxd.exceptions.LXDAPIException as e:
+            self.unit_blocked(f"Failed to set core.proxy_*: {e}")
             raise RuntimeError
 
     def kernel_sysctl(self) -> None:
@@ -1560,17 +1555,10 @@ class LxdCharm(CharmBase):
                         raise RuntimeError
 
                     self.unit_maintenance(f"Configuring cluster.https_address ({cluster_address})")
-                    subprocess.run(
-                        [
-                            "lxc",
-                            "config",
-                            "set",
-                            "cluster.https_address",
-                            cluster_address,
-                        ],
-                        capture_output=True,
-                        check=True,
-                    )
+                    conf = client.api.get().json()["metadata"]["config"]
+                    if conf.get("cluster.https_address") != cluster_address:
+                        conf["cluster.https_address"] = cluster_address
+                        client.api.put(json={"config": conf})
 
                     # XXX: prevent the creation of another parallel cluster by checking if there is
                     # already an app data bag (self.model.get_relation("cluster").data[self.app])
@@ -1588,6 +1576,9 @@ class LxdCharm(CharmBase):
                 # Persist profile changes
                 profile.save()
 
+            except pylxd.exceptions.LXDAPIException as e:
+                self.unit_blocked(f"Failed to configure LXD: {e}")
+                raise RuntimeError
             except subprocess.CalledProcessError as e:
                 self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 raise RuntimeError
