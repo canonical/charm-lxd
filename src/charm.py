@@ -835,13 +835,13 @@ class LxdCharm(CharmBase):
             logger.error(msg)
             return
 
-        client = pylxd.Client()
+        host_env = pylxd.Client().host_info["environment"]
         d = {
             "version": "1.0",
-            "certificate": client.host_info["environment"]["certificate"],
-            "certificate_fingerprint": client.host_info["environment"]["certificate_fingerprint"],
+            "certificate": host_env["certificate"],
+            "certificate_fingerprint": host_env["certificate_fingerprint"],
             # Only strings are allowed so convert list to comma separated string
-            "addresses": "".join(client.host_info["environment"]["addresses"]),
+            "addresses": ",".join(host_env["addresses"]),
         }
 
         # In cluster mode, put the info in the app data bag
