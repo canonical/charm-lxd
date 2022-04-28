@@ -11,7 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from typing import List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -1715,20 +1715,28 @@ class LxdCharm(CharmBase):
     ) -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
-        cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
+        config: Dict[str, Union[str, List[str], bool]] = {
+            "name": name,
+            "password": "",
+            "cert_data": cert,
+        }
+
         if projects:
             msg += f" for projects: {projects}"
-            cmd += ["--restricted", "--projects", projects]
+            # Turn "foo, bar" str into ["foo", "bar"] list
+            config["projects"] = projects.replace(" ", "").split(",")
+            config["restricted"] = True
 
         if metrics:
             msg += " (metrics)"
-            cmd += ["--type=metrics"]
+            config["cert_type"] = "metrics"
 
         logger.info(msg)
+        client = pylxd.Client()
         try:
-            subprocess.run(cmd, input=cert, capture_output=True, check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            client.certificates.create(**config)
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to add certificated: {e}")
             return False
 
         return True
