@@ -841,7 +841,7 @@ class LxdCharm(CharmBase):
             "certificate": client.host_info["environment"]["certificate"],
             "certificate_fingerprint": client.host_info["environment"]["certificate_fingerprint"],
             # Only strings are allowed so convert list to comma separated string
-            "addresses": "".join(client.host_info["environment"]["addresses"]),
+            "addresses": ",".join(client.host_info["environment"]["addresses"]),
         }
 
         # In cluster mode, put the info in the app data bag
