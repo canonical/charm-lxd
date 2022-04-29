@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 from typing import Dict, List, Tuple, Union
 from urllib.error import HTTPError, URLError
@@ -1605,27 +1606,37 @@ class LxdCharm(CharmBase):
         )
         return c.returncode == 0
 
+    def lxd_monitor_lifecycle(self) -> None:
+        """Monitor lifecycle events (blocking)."""
+        event_types = set([pylxd.EventType.Lifecycle])
+        events = pylxd.Client().events(event_types=event_types)
+        events.connect()
+        events.run()
+
     def lxd_reload(self) -> None:
         """Reload the lxd daemon."""
         self.unit_maintenance("Reloading LXD")
         try:
             # Avoid occasional race during startup where a reload could cause a failure
             subprocess.run(["lxd", "waitready", "--timeout=30"], capture_output=True, check=False)
-            # Start a monitor process and wait for it to exit due to the service
+            # Start a monitor thread and wait for it to exit due to the service
             # reloading and the old lxd process closing the monitor's socket.
-            mon = subprocess.Popen(
-                ["lxc", "monitor", "--type=nonexistent"], stderr=subprocess.DEVNULL
+            # Use lifecycle event type as filter because it's low bandwidth.
+            mon = threading.Thread(
+                target=self.lxd_monitor_lifecycle, name="lxd-monitor", daemon=True
             )
+            mon.start()
             subprocess.run(
                 ["systemctl", "reload", "snap.lxd.daemon.service"], capture_output=True, check=True
             )
-            mon.wait(timeout=600)
+            mon.join(timeout=600.0)
 
-        except subprocess.TimeoutExpired:
-            if not mon.returncode:
-                mon.kill()
-            self.unit_maintenance("Timeout while reloading the LXD service")
-            raise RuntimeError
+            # If the monitor thread is still alive, it means LXD didn't reload
+            if mon.is_alive():
+                # There is no easy way to terminate the hanging thread but the charm
+                # process is short-lived anyway.
+                self.unit_maintenance("Timeout while reloading the LXD service")
+                raise RuntimeError
 
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
