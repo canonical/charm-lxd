@@ -32,7 +32,6 @@ applications:
     charm: lxd
     options:
       lxd-listen-https: true
-      snap-channel: latest/edge
       mode: cluster
     num_units: 3
     to:
