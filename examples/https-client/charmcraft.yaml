@@ -14,3 +14,6 @@ parts:
     charm-entrypoint: src/https-client.py
     charm-python-packages:
       - setuptools < 58
+    # Avoid lengthy compilation of pyca/cryptography
+    charm-binary-python-packages:
+      - cryptography
