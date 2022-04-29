@@ -10,8 +10,9 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
-from typing import List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -909,11 +910,13 @@ class LxdCharm(CharmBase):
         db = ",".join(sorted(hosts))
 
         # Configuring LXD to connect to ovn-central DB
-        cmd = ["lxc", "config", "set", f"network.ovn.northbound_connection={db}"]
         try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            conf = client.api.get().json()["metadata"]["config"]
+            if conf.get("network.ovn.northbound_connection") != db:
+                conf["network.ovn.northbound_connection"] = db
+                client.api.put(json={"config": conf})
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to set network.ovn.northbound_connection: {e}")
             return
 
         logger.info(f"LXD is now connected to ovn-central DB (NB connection={db})")
@@ -1074,31 +1077,24 @@ class LxdCharm(CharmBase):
                     no_proxy = v
 
         try:
+            client = pylxd.Client()
+            conf = client.api.get().json()["metadata"]["config"]
+            orig_conf = conf
             if http_proxy:
                 logger.debug(f"Configuring core.proxy_http={http_proxy}")
-                subprocess.run(
-                    ["lxc", "config", "set", "core.proxy_http", http_proxy],
-                    capture_output=True,
-                    check=True,
-                )
-
+                conf["core.proxy_http"] = http_proxy
             if https_proxy:
                 logger.debug(f"Configuring core.proxy_https={https_proxy}")
-                subprocess.run(
-                    ["lxc", "config", "set", "core.proxy_https", https_proxy],
-                    capture_output=True,
-                    check=True,
-                )
+                conf["core.proxy_https"] = https_proxy
             if no_proxy:
                 logger.debug(f"Configuring core.proxy_ignore_hosts={no_proxy}")
-                subprocess.run(
-                    ["lxc", "config", "set", "core.proxy_ignore_hosts", no_proxy],
-                    capture_output=True,
-                    check=True,
-                )
+                conf["core.proxy_ignore_hosts"] = no_proxy
 
-        except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            if conf != orig_conf:
+                client.api.put(json={"config": conf})
+
+        except pylxd.exceptions.LXDAPIException as e:
+            self.unit_blocked(f"Failed to set core.proxy_*: {e}")
             raise RuntimeError
 
     def kernel_sysctl(self) -> None:
@@ -1482,39 +1478,47 @@ class LxdCharm(CharmBase):
                 configure_storage = False
                 network_dev = ""
 
+            client = pylxd.Client()
+            profile = client.profiles.get("default")
+
+            if configure_storage:
+                if client.storage_pools.exists("local"):
+                    logger.debug("Existing storage pool detected")
+                    configure_storage = False
+
+            if network_dev:
+                if client.networks.exists(network_dev):
+                    logger.debug("Existing network detected")
+                    network_dev = ""
+
             try:
                 # Configure the storage
                 if configure_storage:
                     if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
                         src = f"source={self.model.storages['local'][0].location}"
                         self.unit_maintenance("Configuring external storage pool (zfs, {src})")
-                        subprocess.run(
-                            ["lxc", "storage", "create", "local", "zfs", src],
-                            capture_output=True,
-                            check=True,
+                        client.storage_pools.create(
+                            {
+                                "name": "local",
+                                "driver": "zfs",
+                                "source": src,
+                            }
                         )
                     else:
                         self.unit_maintenance("Configuring local storage pool (dir)")
-                        subprocess.run(
-                            ["lxc", "storage", "create", "local", "dir"],
-                            capture_output=True,
-                            check=True,
+                        client.storage_pools.create(
+                            {
+                                "name": "local",
+                                "driver": "dir",
+                            }
                         )
-                    subprocess.run(
-                        [
-                            "lxc",
-                            "profile",
-                            "device",
-                            "add",
-                            "default",
-                            "root",
-                            "disk",
-                            "pool=local",
-                            "path=/",
-                        ],
-                        capture_output=True,
-                        check=True,
-                    )
+
+                    if not profile.devices.get("root"):
+                        profile.devices["root"] = {
+                            "type": "disk",
+                            "pool": "local",
+                            "path": "/",
+                        }
 
                 # Configure the network
                 if network_dev:
@@ -1523,48 +1527,27 @@ class LxdCharm(CharmBase):
                             fan_address = self.juju_space_get_address("fan", require_ipv4=True)
                             fan_subnet = ipaddress.IPv4Network(fan_address).supernet(new_prefix=16)
                             logger.debug(f"Using {fan_subnet} as FAN underlay network")
+                            network_config = {
+                                "bridge.mode": "fan",
+                                "fan.underlay_subnet": str(fan_subnet),
+                            }
                         except Exception:
                             msg = "Can't find a valid subnet for FAN, falling back to lxdbr0"
                             self.unit_maintenance(msg)
                             network_dev = "lxdbr0"
+                            network_config = None
+                    else:
+                        network_config = None
 
                     self.unit_maintenance(f"Configuring network bridge ({network_dev})")
+                    client.networks.create(network_dev, config=network_config)
 
-                    if network_dev == "lxdfan0":
-                        subprocess.run(
-                            [
-                                "lxc",
-                                "network",
-                                "create",
-                                network_dev,
-                                "bridge.mode=fan",
-                                f"fan.underlay_subnet={fan_subnet}",
-                            ],
-                            capture_output=True,
-                            check=True,
-                        )
-                    else:
-                        subprocess.run(
-                            ["lxc", "network", "create", network_dev],
-                            capture_output=True,
-                            check=True,
-                        )
-
-                    subprocess.run(
-                        [
-                            "lxc",
-                            "profile",
-                            "device",
-                            "add",
-                            "default",
-                            "eth0",
-                            "nic",
-                            f"network={network_dev}",
-                            "name=eth0",
-                        ],
-                        capture_output=True,
-                        check=True,
-                    )
+                    if not profile.devices.get("eth0"):
+                        profile.devices["eth0"] = {
+                            "type": "nic",
+                            "network": network_dev,
+                            "name": "eth0",
+                        }
 
                 if mode == "cluster":
                     cluster_address = self.juju_space_get_address("cluster")
@@ -1573,17 +1556,10 @@ class LxdCharm(CharmBase):
                         raise RuntimeError
 
                     self.unit_maintenance(f"Configuring cluster.https_address ({cluster_address})")
-                    subprocess.run(
-                        [
-                            "lxc",
-                            "config",
-                            "set",
-                            "cluster.https_address",
-                            cluster_address,
-                        ],
-                        capture_output=True,
-                        check=True,
-                    )
+                    conf = client.api.get().json()["metadata"]["config"]
+                    if conf.get("cluster.https_address") != cluster_address:
+                        conf["cluster.https_address"] = cluster_address
+                        client.api.put(json={"config": conf})
 
                     # XXX: prevent the creation of another parallel cluster by checking if there is
                     # already an app data bag (self.model.get_relation("cluster").data[self.app])
@@ -1598,6 +1574,12 @@ class LxdCharm(CharmBase):
                         )
                         self._stored.lxd_clustered = True
 
+                # Persist profile changes
+                profile.save()
+
+            except pylxd.exceptions.LXDAPIException as e:
+                self.unit_blocked(f"Failed to configure LXD: {e}")
+                raise RuntimeError
             except subprocess.CalledProcessError as e:
                 self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
                 raise RuntimeError
@@ -1624,27 +1606,37 @@ class LxdCharm(CharmBase):
         )
         return c.returncode == 0
 
+    def lxd_monitor_lifecycle(self) -> None:
+        """Monitor lifecycle events (blocking)."""
+        event_types = set([pylxd.EventType.Lifecycle])
+        events = pylxd.Client().events(event_types=event_types)
+        events.connect()
+        events.run()
+
     def lxd_reload(self) -> None:
         """Reload the lxd daemon."""
         self.unit_maintenance("Reloading LXD")
         try:
             # Avoid occasional race during startup where a reload could cause a failure
             subprocess.run(["lxd", "waitready", "--timeout=30"], capture_output=True, check=False)
-            # Start a monitor process and wait for it to exit due to the service
+            # Start a monitor thread and wait for it to exit due to the service
             # reloading and the old lxd process closing the monitor's socket.
-            mon = subprocess.Popen(
-                ["lxc", "monitor", "--type=nonexistent"], stderr=subprocess.DEVNULL
+            # Use lifecycle event type as filter because it's low bandwidth.
+            mon = threading.Thread(
+                target=self.lxd_monitor_lifecycle, name="lxd-monitor", daemon=True
             )
+            mon.start()
             subprocess.run(
                 ["systemctl", "reload", "snap.lxd.daemon.service"], capture_output=True, check=True
             )
-            mon.wait(timeout=600)
+            mon.join(timeout=600.0)
 
-        except subprocess.TimeoutExpired:
-            if not mon.returncode:
-                mon.kill()
-            self.unit_maintenance("Timeout while reloading the LXD service")
-            raise RuntimeError
+            # If the monitor thread is still alive, it means LXD didn't reload
+            if mon.is_alive():
+                # There is no easy way to terminate the hanging thread but the charm
+                # process is short-lived anyway.
+                self.unit_maintenance("Timeout while reloading the LXD service")
+                raise RuntimeError
 
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
@@ -1725,20 +1717,28 @@ class LxdCharm(CharmBase):
     ) -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
-        cmd = ["lxc", "config", "trust", "add", "-", "--name", name]
+        config: Dict[str, Union[str, List[str], bool]] = {
+            "name": name,
+            "password": "",
+            "cert_data": cert,
+        }
+
         if projects:
             msg += f" for projects: {projects}"
-            cmd += ["--restricted", "--projects", projects]
+            # Turn "foo, bar" str into ["foo", "bar"] list
+            config["projects"] = projects.replace(" ", "").split(",")
+            config["restricted"] = True
 
         if metrics:
             msg += " (metrics)"
-            cmd += ["--type=metrics"]
+            config["cert_type"] = "metrics"
 
         logger.info(msg)
+        client = pylxd.Client()
         try:
-            subprocess.run(cmd, input=cert, capture_output=True, check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            client.certificates.create(**config)
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to add certificated: {e}")
             return False
 
         return True
