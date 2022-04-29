@@ -6,11 +6,7 @@ bases:
 parts:
   charm:
     build-packages:
-      - cargo
       - git
-      - libffi-dev
-      - libssl-dev
-      - rustc
     charm-entrypoint: src/https-client.py
     charm-python-packages:
       - setuptools < 58
