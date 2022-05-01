@@ -33,8 +33,7 @@ jobs:
           sudo adduser "$USER" lxd
           sudo lxd init --auto
           sudo snap install charmcraft --classic
-          # XXX: until juju 2.9.29 reaches the stable channel (LP: #1968849)
-          sudo snap install juju --classic --channel latest/candidate
+          sudo snap install juju --classic
           sudo snap install juju-wait --classic
 
     - name: Build charms
