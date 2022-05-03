@@ -66,7 +66,7 @@ jobs:
           }
           trap debug err exit
 
-          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config sysctl-tuning=false --config kernel-hardening=false --config lxd-listen-https=true
+          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config lxd-listen-https=true
           juju deploy ./https-client_ubuntu-20.04-amd64.charm --config autoremove=false
           juju relate https-client lxd
           juju wait
@@ -136,7 +136,7 @@ jobs:
           trap debug err exit
 
           NODE_CREATED="3"
-          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units "$NODE_CREATED" --config sysctl-tuning=false --config kernel-hardening=false --config mode=cluster
+          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster
           juju wait
           juju status --relations
 
