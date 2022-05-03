@@ -108,7 +108,7 @@ jobs:
     - name: Scale the number of lxd units
       run: |
           set -eux
-          juju add-unit lxd --num-units 3
+          juju add-unit lxd
           juju wait
           juju status
 
