@@ -70,12 +70,12 @@ class LxdCharm(CharmBase):
         # Initialize the persistent storage if needed
         self._stored.set_default(
             addresses={},
-            ovn_certificates_present=False,
             config={},
             lxd_binary_path=None,
             lxd_clustered=False,
             lxd_initialized=False,
             lxd_snap_path=None,
+            ovn_certificates_present=False,
             reboot_required=False,
         )
 
