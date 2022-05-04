@@ -70,12 +70,13 @@ class LxdCharm(CharmBase):
         # Initialize the persistent storage if needed
         self._stored.set_default(
             addresses={},
-            ovn_certificates_present=False,
             config={},
+            inside_container=False,
             lxd_binary_path=None,
             lxd_clustered=False,
             lxd_initialized=False,
             lxd_snap_path=None,
+            ovn_certificates_present=False,
             reboot_required=False,
         )
 
@@ -300,6 +301,17 @@ class LxdCharm(CharmBase):
             logger.error("Failed to install LXD")
             event.defer()
             return
+
+        # Detect if running inside a container
+        c = subprocess.run(
+            ["systemd-detect-virt", "--quiet", "--container"],
+            check=False,
+        )
+        if c.returncode == 0:
+            logger.debug(
+                "systemd-detect-virt detected the run-time environment as being of container type"
+            )
+            self._stored.inside_container = True
 
         # Apply various configs
         self.snap_config_set()
@@ -1114,8 +1126,13 @@ class LxdCharm(CharmBase):
                     ["sysctl", "--quiet", "--load", sysctl_file], capture_output=True, check=True
                 )
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
-                raise RuntimeError
+                if not self._stored.inside_container:
+                    self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                    raise RuntimeError
+                else:
+                    self.unit_maintenance(
+                        f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
+                    )
 
         elif os.path.exists(sysctl_file):
             self.unit_maintenance(f"Removing sysctl config file: {sysctl_file}")
@@ -1137,8 +1154,13 @@ class LxdCharm(CharmBase):
             try:
                 subprocess.run(["systemd-tmpfiles", "--create"], capture_output=True, check=True)
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
-                raise RuntimeError
+                if not self._stored.inside_container:
+                    self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                    raise RuntimeError
+                else:
+                    self.unit_maintenance(
+                        f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
+                    )
 
         elif os.path.exists(systemd_tmpfiles):
             self.unit_maintenance(f"Removing kernel hardening config file: {systemd_tmpfiles}")
