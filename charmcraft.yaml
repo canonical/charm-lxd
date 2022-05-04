@@ -6,8 +6,12 @@ bases:
 parts:
   charm:
     build-packages:
+      - cargo
       - git
+      - libffi-dev
+      - libssl-dev
       - python3-dev
+      - rustc
     charm-python-packages:
       - setuptools < 58
   grafana-dashboard:
