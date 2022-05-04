@@ -6,13 +6,22 @@ bases:
 parts:
   charm:
     build-packages:
-      - git
-      - python3-dev
+      - on amd64:
+        - git
+        - python3-dev
+      - else:
+        - git
+        - python3-dev
+        - cargo
+        - libffi-dev
+        - libssl-dev
+        - rustc
     charm-python-packages:
       - setuptools < 58
     # Avoid lengthy compilation of pyca/cryptography
     charm-binary-python-packages:
-      - cryptography
+      - try:
+        - cryptography
   grafana-dashboard:
     plugin: dump
     source: .
