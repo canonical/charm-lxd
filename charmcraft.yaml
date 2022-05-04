@@ -10,9 +10,6 @@ parts:
       - python3-dev
     charm-python-packages:
       - setuptools < 58
-    # Avoid lengthy compilation of pyca/cryptography
-    charm-binary-python-packages:
-      - cryptography
   grafana-dashboard:
     plugin: dump
     source: .
