@@ -72,6 +72,9 @@ options:
   snap-config-openvswitch-builtin:
     type: boolean
     description: Run a snap-specific OVS daemon
+  snap-config-openvswitch-external:
+    type: boolean
+    description: Use the system's OVS tools (ignores snap-config-openvswitch-builtin)
   snap-config-ovn-builtin:
     type: boolean
     description: Use snap-specific OVN configuration
