@@ -35,6 +35,29 @@ juju add-relation -m ctrl ceph-mon admin/test.lxd
 
 At the end of a successful deployment, LXD will need to be configured to interact with the freshly deployed Ceph cluster following those [instructions](../../README.md#Storage).
 
+
+## OVN and LXD
+
+Setup the `test` model and deploy the OVN chassis and LXD instances using [ovn-chassis-and-lxd.yaml](ovn/ovn-chassis-and-lxd.yaml):
+
+``shell
+juju add-model test maas
+juju create-storage-pool -m test local maas
+juju deploy -m test ./ovn-chassis-and-lxd.yaml
+``
+
+Setup the `ctrl` model and deploy the Ceph MONs using [ovn-central-and-vault.yaml](ovn/ovn-central-and-vault.yaml):
+
+``shell
+juju add-model ctrl maas
+juju deploy -m ctrl ./ovn-central-and-vault.yaml
+``
+
+Create the CMRs:
+
+``shell
+``
+
 ## Known issues
 
 The order used to `offer` and `add-relation` is important despite what `juju add-relation --help` might say.
