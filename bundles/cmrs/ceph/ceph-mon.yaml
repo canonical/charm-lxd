@@ -1,0 +1,26 @@
+series: focal
+variables:
+  osd-devices: &osd-devices /dev/sdc
+  expected-osd-count: &expected-osd-count 3
+  expected-mon-count: &expected-mon-count 3
+machines:
+  "0":
+    # Compute
+    series: focal
+  "1":
+    # Compute
+    series: focal
+  "2":
+    # Compute
+    series: focal
+applications:
+  ceph-mon:
+    charm: ceph-mon
+    options:
+      expected-osd-count: *expected-osd-count
+      monitor-count: *expected-mon-count
+    num_units: 3
+    to:
+    - 0
+    - 1
+    - 2
