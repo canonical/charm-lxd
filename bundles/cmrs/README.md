@@ -35,6 +35,48 @@ juju add-relation -m ctrl ceph-mon admin/test.lxd
 
 At the end of a successful deployment, LXD will need to be configured to interact with the freshly deployed Ceph cluster following those [instructions](../../README.md#Storage).
 
+
+## OVN and LXD
+
+Setup the `test` model and deploy the OVN chassis and LXD instances using [ovn-chassis-and-lxd.yaml](ovn/ovn-chassis-and-lxd.yaml):
+
+``shell
+juju add-model test maas
+juju deploy -m test ./ovn-chassis-and-lxd.yaml
+``
+
+Setup the `ctrl` model and deploy the OVN central units and Vault using [ovn-central-and-vault.yaml](ovn/ovn-central-and-vault.yaml):
+
+``shell
+juju add-model ctrl maas
+juju deploy -m ctrl ./ovn-central-and-vault.yaml
+``
+
+Create the CMRs:
+
+``shell
+# offer ovn-dedicated-chassis' certificates interface for consumption by vault
+#       and the ovsdb interface for consumption by ovn-central
+juju offer test.ovn-dedicated-chassis:certificates,ovsdb
+
+# relate vault to the remote ovn-dedicated-chassis
+juju add-relation -m ctrl vault admin/test.ovn-dedicated-chassis
+
+# relate ovn-central to the remote ovn-dedicated-chassis
+echo "XXX: this currently doesn't work, see LP: #1976537"
+juju add-relation -m ctrl ovn-central admin/test.ovn-dedicated-chassis
+
+# offer lxd' certificates interface for consumption by vault
+#       and the ovsdb-cms interface for consumption by ovn-central
+juju offer test.lxd:certificates,ovsdb-cms
+
+# relate vault to the remote lxd
+juju add-relation -m ctrl vault admin/test.lxd
+
+# relate ovn-central to the remote lxd
+juju add-relation -m ctrl ovn-central admin/test.lxd
+``
+
 ## Known issues
 
 The order used to `offer` and `add-relation` is important despite what `juju add-relation --help` might say.
