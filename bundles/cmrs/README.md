@@ -42,11 +42,10 @@ Setup the `test` model and deploy the OVN chassis and LXD instances using [ovn-c
 
 ``shell
 juju add-model test maas
-juju create-storage-pool -m test local maas
 juju deploy -m test ./ovn-chassis-and-lxd.yaml
 ``
 
-Setup the `ctrl` model and deploy the Ceph MONs using [ovn-central-and-vault.yaml](ovn/ovn-central-and-vault.yaml):
+Setup the `ctrl` model and deploy the OVN central units and Vault using [ovn-central-and-vault.yaml](ovn/ovn-central-and-vault.yaml):
 
 ``shell
 juju add-model ctrl maas
@@ -56,6 +55,26 @@ juju deploy -m ctrl ./ovn-central-and-vault.yaml
 Create the CMRs:
 
 ``shell
+# offer ovn-dedicated-chassis' certificates interface for consumption by vault
+#       and the ovsdb interface for consumption by ovn-central
+juju offer test.ovn-dedicated-chassis:certificates,ovsdb
+
+# relate vault to the remote ovn-dedicated-chassis
+juju add-relation -m ctrl vault admin/test.ovn-dedicated-chassis
+
+# XXX: this currently doesn't work, see LP: #1976537
+# relate ovn-central to the remote ovn-dedicated-chassis
+echo "skipping: juju add-relation -m ctrl ovn-central admin/test.ovn-dedicated-chassis"
+
+# offer lxd' certificates interface for consumption by vault
+#       and the ovsdb-cms interface for consumption by ovn-central
+juju offer test.lxd:certificates,ovsdb-cms
+
+# relate vault to the remote lxd
+juju add-relation -m ctrl vault admin/test.lxd
+
+# relate ovn-central to the remote lxd
+juju add-relation -m ctrl ovn-central admin/test.lxd
 ``
 
 ## Known issues
