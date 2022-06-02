@@ -189,9 +189,14 @@ class LxdCharm(CharmBase):
     def _on_action_debug(self, event: ActionEvent) -> None:
         """Collect information for a bug report."""
         try:
-            b = subprocess.run(["lxd.buginfo"], capture_output=True, check=True)
+            b = subprocess.run(["lxd.buginfo"], capture_output=True, check=True, timeout=600)
         except subprocess.CalledProcessError as e:
             msg = f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})'
+            event.fail(msg)
+            logger.error(msg)
+            raise RuntimeError
+        except subprocess.TimeoutExpired as e:
+            msg = f'Timeout exceeded while running "{e.cmd}"'
             event.fail(msg)
             logger.error(msg)
             raise RuntimeError
@@ -306,6 +311,7 @@ class LxdCharm(CharmBase):
         c = subprocess.run(
             ["systemd-detect-virt", "--quiet", "--container"],
             check=False,
+            timeout=600,
         )
         if c.returncode == 0:
             logger.debug(
@@ -1123,7 +1129,10 @@ class LxdCharm(CharmBase):
 
             try:
                 subprocess.run(
-                    ["sysctl", "--quiet", "--load", sysctl_file], capture_output=True, check=True
+                    ["sysctl", "--quiet", "--load", sysctl_file],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
@@ -1133,6 +1142,9 @@ class LxdCharm(CharmBase):
                     self.unit_maintenance(
                         f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
                     )
+            except subprocess.TimeoutExpired as e:
+                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                raise RuntimeError
 
         elif os.path.exists(sysctl_file):
             self.unit_maintenance(f"Removing sysctl config file: {sysctl_file}")
@@ -1152,7 +1164,9 @@ class LxdCharm(CharmBase):
             with open(systemd_tmpfiles, "w", encoding="UTF-8") as f:
                 f.write("\n".join(SYSTEMD_TMPFILES_CONFIGS) + "\n")
             try:
-                subprocess.run(["systemd-tmpfiles", "--create"], capture_output=True, check=True)
+                subprocess.run(
+                    ["systemd-tmpfiles", "--create"], capture_output=True, check=True, timeout=600
+                )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
                     self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
@@ -1161,6 +1175,9 @@ class LxdCharm(CharmBase):
                     self.unit_maintenance(
                         f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
                     )
+            except subprocess.TimeoutExpired as e:
+                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                raise RuntimeError
 
         elif os.path.exists(systemd_tmpfiles):
             self.unit_maintenance(f"Removing kernel hardening config file: {systemd_tmpfiles}")
@@ -1176,6 +1193,7 @@ class LxdCharm(CharmBase):
             capture_output=True,
             check=False,
             encoding="UTF-8",
+            timeout=600,
         )
         if c.returncode != 0 or not c.stdout:
             logger.debug(
@@ -1231,7 +1249,9 @@ class LxdCharm(CharmBase):
 
         self.unit_maintenance("Joining cluster")
         try:
-            subprocess.run(["lxd", "init", "--preseed"], check=True, input=preseed_yaml)
+            subprocess.run(
+                ["lxd", "init", "--preseed"], check=True, input=preseed_yaml, timeout=600
+            )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
 
@@ -1240,6 +1260,9 @@ class LxdCharm(CharmBase):
             with os.fdopen(handle, "wb") as f:
                 f.write(preseed_yaml)
             logger.error(f"The YAML preseed that caused a failure was saved to {tmp_file}")
+            raise RuntimeError
+        except subprocess.TimeoutExpired as e:
+            logger.error(f'Timeout exceeded while running "{e.cmd}"')
             raise RuntimeError
 
         self.unit_active()
@@ -1254,9 +1277,12 @@ class LxdCharm(CharmBase):
                 capture_output=True,
                 check=True,
                 input="yes".encode(),
+                timeout=600,
             )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+        except subprocess.TimeoutExpired as e:
+            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
 
     def lxd_generate_cert_key_pair(self, name: str) -> Tuple[str, str]:
         """Generate a certificate and key pair."""
@@ -1293,9 +1319,13 @@ class LxdCharm(CharmBase):
                 capture_output=True,
                 check=True,
                 encoding="UTF-8",
+                timeout=600,
             )
         except subprocess.CalledProcessError as e:
             logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            return ("", "")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f'Timeout exceeded while running "{e.cmd}"')
             return ("", "")
 
         # The key data was output to stdout and never touched the disk
@@ -1483,9 +1513,13 @@ class LxdCharm(CharmBase):
                     capture_output=True,
                     check=True,
                     input=preseed.encode(),
+                    timeout=600,
                 )
             except subprocess.CalledProcessError as e:
                 self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                raise RuntimeError
+            except subprocess.TimeoutExpired as e:
+                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
                 raise RuntimeError
         else:
             self.unit_maintenance("Performing initial configuration")
@@ -1593,6 +1627,7 @@ class LxdCharm(CharmBase):
                             ["lxc", "cluster", "enable", os.uname().nodename],
                             capture_output=True,
                             check=True,
+                            timeout=600,
                         )
                         self._stored.lxd_clustered = True
 
@@ -1604,6 +1639,9 @@ class LxdCharm(CharmBase):
                 raise RuntimeError
             except subprocess.CalledProcessError as e:
                 self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                raise RuntimeError
+            except subprocess.TimeoutExpired as e:
+                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
                 raise RuntimeError
 
         # Initial configuration of core.proxy_* keys
@@ -1625,6 +1663,7 @@ class LxdCharm(CharmBase):
         c = subprocess.run(
             ["systemctl", "is-active", "--quiet", "snap.lxd.daemon.service"],
             check=False,
+            timeout=600,
         )
         return c.returncode == 0
 
@@ -1727,9 +1766,13 @@ class LxdCharm(CharmBase):
                 cmd,
                 capture_output=True,
                 check=True,
+                timeout=600,
             )
         except subprocess.CalledProcessError as e:
             logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            return False
+        except subprocess.TimeoutExpired as e:
+            logger.error(f'Timeout exceeded while running "{e.cmd}"')
             return False
 
         return True
@@ -1910,9 +1953,17 @@ class LxdCharm(CharmBase):
         self.unit_maintenance("Setting snap configuration(s): " + ", ".join(snap_set_list))
 
         try:
-            subprocess.run(["snap", "set", "lxd"] + snap_set_list, capture_output=True, check=True)
+            subprocess.run(
+                ["snap", "set", "lxd"] + snap_set_list,
+                capture_output=True,
+                check=True,
+                timeout=600,
+            )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            raise RuntimeError
+        except subprocess.TimeoutExpired as e:
+            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
             raise RuntimeError
 
         # If "snap set lxd" was successful: save all the k/v applied
@@ -1954,16 +2005,23 @@ class LxdCharm(CharmBase):
                 ["snap", "install", "lxd", f"--channel={channel}"] + cohort,
                 capture_output=True,
                 check=True,
+                timeout=600,
             )
             subprocess.run(
                 ["snap", "refresh", "lxd", f"--channel={channel}"] + cohort,
                 capture_output=True,
                 check=True,
+                timeout=600,
             )
             if os.path.exists("/var/lib/lxd"):
-                subprocess.run(["lxd.migrate", "-yes"], capture_output=True, check=True)
+                subprocess.run(
+                    ["lxd.migrate", "-yes"], capture_output=True, check=True, timeout=600
+                )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            raise RuntimeError
+        except subprocess.TimeoutExpired as e:
+            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
             raise RuntimeError
 
         # Done with the snap installation
@@ -1989,13 +2047,16 @@ class LxdCharm(CharmBase):
             enable = ["systemctl", "enable", "--now", "snap.lxd.daemon.unix.socket"]
 
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=600)
             if alias:
-                subprocess.run(alias, capture_output=True, check=True)
+                subprocess.run(alias, capture_output=True, check=True, timeout=600)
             if enable:
-                subprocess.run(enable, capture_output=True, check=True)
+                subprocess.run(enable, capture_output=True, check=True, timeout=600)
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            raise RuntimeError
+        except subprocess.TimeoutExpired as e:
+            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
             raise RuntimeError
 
     def snap_sideload_lxd_binary(self) -> None:
