@@ -1248,6 +1248,17 @@ class LxdCharm(CharmBase):
 
     def lxd_cluster_remove(self, member: str) -> None:
         """Remove a member from the cluster."""
+        # First check if the departing unit is actually a cluster member
+        c = subprocess.run(
+            ["lxc", "cluster", "show", member],
+            check=False,
+            timeout=600,
+        )
+        if c.returncode != 0:
+            logger.debug(f"Not removing {member} from the cluster as it is not part of it")
+            return
+
+        # Proceed with the cluster member removal
         try:
             subprocess.run(
                 ["lxc", "cluster", "remove", "--force", member],
