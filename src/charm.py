@@ -1623,25 +1623,28 @@ class LxdCharm(CharmBase):
                     # Enable clustering if needed
                     if self.unit.is_leader():
                         self.unit_maintenance("Enabling cluster mode")
-                        subprocess.run(
-                            ["lxc", "cluster", "enable", os.uname().nodename],
-                            capture_output=True,
-                            check=True,
-                            timeout=600,
-                        )
-                        self._stored.lxd_clustered = True
+                        try:
+                            subprocess.run(
+                                ["lxc", "cluster", "enable", os.uname().nodename],
+                                capture_output=True,
+                                check=True,
+                                timeout=600,
+                            )
+                            self._stored.lxd_clustered = True
+                        except subprocess.CalledProcessError as e:
+                            self.unit_blocked(
+                                f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})'
+                            )
+                            raise RuntimeError
+                        except subprocess.TimeoutExpired as e:
+                            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                            raise RuntimeError
 
                 # Persist profile changes
                 profile.save()
 
             except pylxd.exceptions.LXDAPIException as e:
                 self.unit_blocked(f"Failed to configure LXD: {e}")
-                raise RuntimeError
-            except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
-                raise RuntimeError
-            except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
                 raise RuntimeError
 
         # Initial configuration of core.proxy_* keys
