@@ -1,0 +1,38 @@
+series: focal
+machines:
+  "0":
+    # Compute
+    series: focal
+  "1":
+    # Compute
+    series: focal
+  "2":
+    # Compute
+    series: focal
+  "3":
+    # Compute
+    series: focal
+  "4":
+    # Compute
+    series: focal
+applications:
+  ovn-dedicated-chassis:
+    charm: ovn-dedicated-chassis
+    num_units: 5
+    to:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+  lxd:
+    charm: lxd
+    options:
+      mode: cluster
+    num_units: 5
+    to:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4

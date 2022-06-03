@@ -1,0 +1,44 @@
+series: focal
+machines:
+  "0":
+    # Compute
+    series: focal
+  "1":
+    # Compute
+    series: focal
+  "2":
+    # Compute
+    series: focal
+  "3":
+    # Compute
+    series: focal
+applications:
+  postgresql:
+    charm: postgresql
+    channel: stable
+    num_units: 1
+    to:
+    - lxd:0
+  vault:
+    charm: vault
+    channel: stable
+    num_units: 1
+    to:
+    - lxd:0
+    options:
+      auto-generate-root-ca-cert: true
+      # XXX: insecure, only for testing
+      totally-unsecure-auto-unlock: true
+  ovn-central:
+    charm: ovn-central
+    channel: stable
+    num_units: 3
+    to:
+    - 1
+    - 2
+    - 3
+relations:
+- - vault:db
+  - postgresql:db
+- - ovn-central:certificates
+  - vault:certificates
