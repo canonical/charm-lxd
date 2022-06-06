@@ -112,6 +112,21 @@ jobs:
           juju wait
           juju status
 
+    - name: Test add-trusted-client action
+      run: |
+          set -eux
+          CERT_NAME="add-trusted-client-$$"
+
+          # Generate local cert/key
+          rm -rf ~/snap/lxd/common/config/
+          lxc remote add localhost --accept-certificate --password=abc 2>/dev/null || true
+
+          juju run-action --wait lxd/leader add-trusted-client name="$CERT_NAME" cert="$(cat ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is now trusted'
+
+          # Confirm the user's cert was added to the trusted list
+          juju run --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
+
+
     - name: Cleanup standalone lxd units
       run: |
           set -eux
