@@ -151,12 +151,27 @@ jobs:
           trap debug err exit
 
           NODE_CREATED="3"
-          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster
+          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
           juju wait
           juju status --relations
 
           NODE_JOINED="$(juju run --unit lxd/leader -- lxc cluster list --format csv | grep -cF ',ONLINE,Fully operational')"
           [ "$NODE_JOINED" -eq "$NODE_CREATED" ]
+
+    - name: Test get-client-token action
+      run: |
+          set -eux
+          CERT_NAME="get-client-token-$$"
+          REMOTE_NAME="rmt-$$"
+
+          token="$(juju run-action --wait lxd/leader get-client-token name="$CERT_NAME" | sed -n '/^\s\+Client [^ ]\+ certificate add token:$/,+1 p' | sed '/^\s\+Client /d; s/^\s\+//')"
+          lxc remote add "$REMOTE_NAME" "$token"
+
+          # Test the newly added remote
+          lxc config show "$REMOTE_NAME":
+
+          # Confirm the user's cert was added to the trusted list
+          juju run --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
     - name: Check for errors
       run: |

@@ -23,5 +23,15 @@ add-trusted-client:
 debug:
   description: Collect useful information for bug reports (calls lxd.buginfo)
 
+get-client-token:
+  description: Return a client certificate add token to use by the client as `lxc remote add <remote-name> <token>`
+  params:
+    name:
+      description: The user-specified identifier
+      type: string
+    projects:
+      description: A comma separated list of projects to restrict the client certificate to (optional)
+      type: string
+
 show-pending-config:
   description: Show the currently pending configuration changes (queued for after the reboot)

@@ -85,6 +85,7 @@ class LxdCharm(CharmBase):
             self.on.add_trusted_client_action, self._on_action_add_trusted_client
         )
         self.framework.observe(self.on.debug_action, self._on_action_debug)
+        self.framework.observe(self.on.get_client_token_action, self._on_action_get_client_token)
         self.framework.observe(
             self.on.show_pending_config_action, self._on_action_show_pending_config
         )
@@ -203,6 +204,20 @@ class LxdCharm(CharmBase):
 
         event.set_results({"buginfo": b.stdout})
         logger.debug("lxd.buginfo called successfully")
+
+    def _on_action_get_client_token(self, event: ActionEvent) -> None:
+        """Return a client certificate add token (to use with: `lxc remote add $rmt $token`)."""
+        name = event.params.get("name")
+        projects = event.params.get("projects")
+
+        token = self.lxd_trust_token(name=name, projects=projects)
+        if token:
+            msg = f"Client {name} certificate add token:\n{token}"
+            event.set_results({"result": msg})
+        else:
+            msg = "Failed to get a client certificate add token"
+            event.fail(msg)
+            logger.error(msg)
 
     def _on_action_show_pending_config(self, event: ActionEvent) -> None:
         """Show the currently pending configuration changes (queued for after the reboot)."""
@@ -1860,6 +1875,29 @@ class LxdCharm(CharmBase):
         except pylxd.exceptions.NotFound:
             logger.error(f"No certificate with fingerprint {fingerprint} found")
             return False
+
+    def lxd_trust_token(self, name: str, projects: str = "") -> str:
+        """Get a client certificate add token."""
+        msg = f"Requesting a client certificate add token for {name}"
+        config: Dict[str, Union[str, List[str], bool]] = {
+            "name": name,
+        }
+
+        if projects:
+            msg += f" for projects: {projects}"
+            # Turn "foo, bar" str into ["foo", "bar"] list
+            config["projects"] = projects.replace(" ", "").split(",")
+            config["restricted"] = True
+
+        logger.info(msg)
+        client = pylxd.Client()
+        try:
+            token: str = client.certificates.create_token(**config)
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to get a client certificated add token: {e}")
+            return ""
+
+        return token
 
     def resource_sideload(self) -> None:
         """Sideload resources."""
