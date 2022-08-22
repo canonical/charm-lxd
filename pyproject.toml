@@ -40,7 +40,6 @@ docstring-convention = "google"
 exclude = "build"
 pretty = true
 python_version = 3.8
-mypy_path = "$MYPY_CONFIG_FILE_DIR/src:$MYPY_CONFIG_FILE_DIR/lib:$MYPY_CONFIG_FILE_DIR/tests/unit"
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
