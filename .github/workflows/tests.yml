@@ -184,7 +184,7 @@ jobs:
 
     - name: Juju debug-log
       if: always()
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: juju-debug-logs ${{ github.job }}
         path: juju-debug.log

@@ -24,7 +24,7 @@ jobs:
           sudo -g lxd charmcraft pack
 
     - name: Upload charm
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: lxd_ubuntu-20.04-amd64.charm
         path: lxd_ubuntu-20.04-amd64.charm
