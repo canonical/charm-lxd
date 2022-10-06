@@ -1,2 +1,3 @@
-git+https://github.com/lxc/pylxd@master#egg=pylxd
 ops >= 1.2.0
+git+https://github.com/lxc/pylxd@master#egg=pylxd
+pyopenssl
