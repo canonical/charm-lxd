@@ -23,6 +23,8 @@ jobs:
   integration-tests:
     name: Juju tests
     runs-on: ubuntu-20.04
+    needs:
+    - static-analysis
     steps:
     - name: Checkout
       uses: actions/checkout@v3
