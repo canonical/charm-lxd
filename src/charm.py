@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 import pylxd
 import yaml
+from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from ops.charm import (
     ActionEvent,
     CharmBase,
@@ -26,6 +27,7 @@ from ops.charm import (
     RelationChangedEvent,
     RelationCreatedEvent,
     RelationDepartedEvent,
+    RelationJoinedEvent,
     StartEvent,
 )
 from ops.framework import StoredState
@@ -80,6 +82,8 @@ class LxdCharm(CharmBase):
             reboot_required=False,
         )
 
+        self._loki_consumer = LokiPushApiConsumer(self)
+
         # Action event handlers
         self.framework.observe(
             self.on.add_trusted_client_action, self._on_action_add_trusted_client
@@ -111,6 +115,14 @@ class LxdCharm(CharmBase):
         )
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
+        self.framework.observe(
+            self._loki_consumer.on.loki_push_api_endpoint_joined,
+            self._on_loki_push_api_endpoint_joined,
+        )
+        self.framework.observe(
+            self._loki_consumer.on.loki_push_api_endpoint_departed,
+            self._on_loki_push_api_endpoint_departed,
+        )
         self.framework.observe(
             self.on.ovsdb_cms_relation_changed, self._on_ovsdb_cms_relation_changed
         )
@@ -886,6 +898,54 @@ class LxdCharm(CharmBase):
         else:
             event.relation.data[self.unit].update(d)
             logger.debug(f"Connection information put in {self.unit.name}")
+
+    def _on_loki_push_api_endpoint_joined(self, event: RelationJoinedEvent):
+        """Configure LXD to send logs to Loki."""
+        logger.debug("Loki push API endpoint joined")
+
+        loki_endpoints = self._loki_consumer.loki_endpoints
+        if not loki_endpoints:
+            logger.debug("loki_endpoints not initialized")
+            return
+
+        # There can be multiple Loki endpoints but LXD only supports logging to
+        # a single API URL, so pick the first.
+        loki_api_url = loki_endpoints[0]["url"]
+
+        # Check if LXD supports streaming to Loki
+        client = pylxd.Client()
+        if not client.has_api_extension("loki"):
+            logger.error(
+                "LXD is missing the loki API extension so the logging relation is not usable"
+            )
+            return
+
+        # Configuring LXD to stream to Loki
+        try:
+            conf = client.api.get().json()["metadata"]["config"]
+            if conf.get("loki.api.url") != loki_api_url:
+                conf["loki.api.url"] = loki_api_url
+                client.api.put(json={"config": conf})
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to set loki.api.url: {e}")
+            return
+
+        logger.info(f"LXD is now streaming logs to Loki at {loki_api_url})")
+
+    def _on_loki_push_api_endpoint_departed(self, event: RelationDepartedEvent):
+        """Configure LXD to stop sending logs to Loki."""
+        logger.debug("Loki push API endpoint departed")
+
+        # Configuring LXD to stop streaming to Loki
+        client = pylxd.Client()
+        try:
+            conf = client.api.get().json()["metadata"]["config"]
+            if conf.pop("loki.api.url", None):
+                client.api.put(json={"config": conf})
+                logger.info("LXD is no longer streaming logs to Loki)")
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to set loki.api.url: {e}")
+            return
 
     def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
         """Remove the client certificate of the departed unit.
