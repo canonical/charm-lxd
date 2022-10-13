@@ -26,5 +26,5 @@ jobs:
     - name: Upload charm
       uses: actions/upload-artifact@v3
       with:
-        name: lxd_ubuntu-20.04-amd64.charm
-        path: lxd_ubuntu-20.04-amd64.charm
+        name: lxd-amd64-charm
+        path: lxd_ubuntu-*-amd64.charm
