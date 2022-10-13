@@ -54,5 +54,5 @@ check_untyped_defs = true
 
 # Ignore libraries that do not have type hint nor stubs
 [[tool.mypy.overrides]]
-module = ["ops.*", "pylxd.*"]
+module = ["charms.loki_k8s.v0.loki_push_api", "ops.*", "pylxd.*"]
 ignore_missing_imports = true

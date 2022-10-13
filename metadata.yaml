@@ -61,5 +61,7 @@ requires:
     optional: true
   certificates:
     interface: tls-certificates
+  logging:
+    interface: loki_push_api
   ovsdb-cms:
     interface: ovsdb-cms
