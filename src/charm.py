@@ -1352,6 +1352,7 @@ class LxdCharm(CharmBase):
         c = subprocess.run(
             ["lxc", "cluster", "show", member],
             check=False,
+            stdout=subprocess.DEVNULL,
             timeout=600,
         )
         if c.returncode != 0:
