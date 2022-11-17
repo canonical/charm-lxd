@@ -1347,31 +1347,24 @@ class LxdCharm(CharmBase):
         logger.debug(f"Cluster joined successfully consuming the token: {token}")
 
     def lxd_cluster_remove(self, member: str) -> None:
-        """Remove a member from the cluster."""
-        # First check if the departing unit is actually a cluster member
-        c = subprocess.run(
-            ["lxc", "cluster", "show", member],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            timeout=600,
-        )
-        if c.returncode != 0:
-            logger.debug(f"Not removing {member} from the cluster as it is not part of it")
+        """Remove a member from the cluster.
+
+        Check if the departing unit is actually a cluster member and then
+        proceed with the removal.
+        """
+        client = pylxd.Client()
+        if not client.cluster.enabled:
+            logger.debug(f"Clustering not enabled for {member}")
             return
 
-        # Proceed with the cluster member removal
         try:
-            subprocess.run(
-                ["lxc", "cluster", "remove", "--force", member],
-                capture_output=True,
-                check=True,
-                input="yes".encode(),
-                timeout=600,
-            )
-        except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
-        except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            m = client.cluster.members.get(member)
+            m.delete()
+        except pylxd.exceptions.NotFound:
+            logger.debug(f"Not removing {member} from the cluster as it is not part of it")
+            return
+        except pylxd.exceptions.LXDAPIException as e:
+            self.unit_blocked(f"Failed to remove {member} from the cluster: {e}")
 
     def lxd_generate_cert_key_pair(self, name: str) -> Tuple[str, str]:
         """Generate a certificate and key pair."""
