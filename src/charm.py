@@ -1706,20 +1706,10 @@ class LxdCharm(CharmBase):
                     if self.unit.is_leader():
                         self.unit_maintenance("Enabling cluster mode")
                         try:
-                            subprocess.run(
-                                ["lxc", "cluster", "enable", os.uname().nodename],
-                                capture_output=True,
-                                check=True,
-                                timeout=600,
-                            )
+                            client.cluster.enable(server_name=os.uname().nodename)
                             self._stored.lxd_clustered = True
-                        except subprocess.CalledProcessError as e:
-                            self.unit_blocked(
-                                f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})'
-                            )
-                            raise RuntimeError
-                        except subprocess.TimeoutExpired as e:
-                            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                        except pylxd.exceptions.LXDAPIException as e:
+                            self.unit_blocked(f"Failed to enable cluster mode: {e}")
                             raise RuntimeError
 
                 # Persist profile changes
