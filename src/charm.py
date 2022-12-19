@@ -1150,15 +1150,17 @@ class LxdCharm(CharmBase):
         no_proxy = None
 
         with open(juju_proxy, encoding="UTF-8") as f:
-            for line in f.read().splitlines():
+            for line in f:
                 # Only consider lines exporting variables
                 if not line.startswith("export "):
                     continue
 
-                # Parse export lines
+                # Strip the export prefix to only keep the variable and value
+                line = line.rstrip().replace("export ", "", 1)
+
+                # Parse variable=value lines
                 try:
-                    # Strip "export " prefix and split variable/value
-                    k, v = line.replace("export ", "", 1).split("=", 1)
+                    k, v = line.split("=", 1)
                 except (IndexError, ValueError):
                     continue
 
