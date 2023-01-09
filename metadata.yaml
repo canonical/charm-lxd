@@ -49,6 +49,8 @@ provides:
     interface: lxd-dns
   grafana-dashboard:
     interface: grafana-dashboard
+  grafana-dashboard-k8s:
+    interface: grafana_dashboard
   https:
     interface: lxd-https
   metrics:

@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 import pylxd
 import yaml
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from ops.charm import (
     ActionEvent,
@@ -82,6 +83,11 @@ class LxdCharm(CharmBase):
             reboot_required=False,
         )
 
+        # XXX: not using the default relation_name="grafana-dashboard" to keep supporting the old
+        #      grafana machine charm that also used that interface name.
+        self.grafana_dashboard_provider = GrafanaDashboardProvider(
+            charm=self, relation_name="grafana-dashboard-k8s"
+        )
         self._loki_consumer = LokiPushApiConsumer(self)
 
         # Action event handlers
