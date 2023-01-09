@@ -20,6 +20,7 @@ parts:
     plugin: dump
     source: .
     override-pull: |
-      wget --https-only https://grafana.com/api/dashboards/15726/revisions/latest/download -O LXD.json
+      mkdir -p src/grafana_dashboards
+      wget --https-only https://grafana.com/api/dashboards/15726/revisions/latest/download -O src/grafana_dashboards/LXD.json
     build-packages:
       - wget

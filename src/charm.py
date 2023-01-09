@@ -753,7 +753,7 @@ class LxdCharm(CharmBase):
             return
 
         # Load the dashboard
-        dashboard_file = "LXD.json"
+        dashboard_file = "grafana_dashboards/LXD.json"
         if not os.path.exists(dashboard_file):
             logger.error("No LXD dashboard for Grafana was bundled in the charm")
             return
