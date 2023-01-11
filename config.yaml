@@ -69,6 +69,9 @@ options:
   snap-config-lxcfs-cfs:
     type: boolean
     description: Consider CPU shares for CPU usage
+  snap-config-lxcfs-debug:
+    type: boolean
+    description: Increase logging to debug level
   snap-config-openvswitch-builtin:
     type: boolean
     description: Run a snap-specific OVS daemon
