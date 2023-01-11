@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 import pylxd
 import yaml
+from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from ops.charm import (
     ActionEvent,
@@ -82,6 +83,11 @@ class LxdCharm(CharmBase):
             reboot_required=False,
         )
 
+        # XXX: not using the default relation_name="grafana-dashboard" to keep supporting the old
+        #      grafana machine charm that also used that interface name.
+        self.grafana_dashboard_provider = GrafanaDashboardProvider(
+            charm=self, relation_name="grafana-dashboard-k8s"
+        )
         self._loki_consumer = LokiPushApiConsumer(self)
 
         # Action event handlers
@@ -753,7 +759,7 @@ class LxdCharm(CharmBase):
             return
 
         # Load the dashboard
-        dashboard_file = "LXD.json"
+        dashboard_file = "grafana_dashboards/LXD.json"
         if not os.path.exists(dashboard_file):
             logger.error("No LXD dashboard for Grafana was bundled in the charm")
             return
@@ -1150,15 +1156,17 @@ class LxdCharm(CharmBase):
         no_proxy = None
 
         with open(juju_proxy, encoding="UTF-8") as f:
-            for line in f.read().splitlines():
+            for line in f:
                 # Only consider lines exporting variables
                 if not line.startswith("export "):
                     continue
 
-                # Parse export lines
+                # Strip the export prefix to only keep the variable and value
+                line = line.rstrip().replace("export ", "", 1)
+
+                # Parse variable=value lines
                 try:
-                    # Strip "export " prefix and split variable/value
-                    k, v = line.replace("export ", "", 1).split("=", 1)
+                    k, v = line.split("=", 1)
                 except (IndexError, ValueError):
                     continue
 
