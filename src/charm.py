@@ -766,6 +766,9 @@ class LxdCharm(CharmBase):
 
         with open(dashboard_file) as f:
             data = f.read()
+            # XXX: Undo workaround for grafana-k8s-operator's bug
+            #      https://github.com/canonical/grafana-k8s-operator/issues/178
+            data = data.replace("{prometheusds}", "{DS_LXD}")
             dashboard = json.loads(data)
 
         # The bundled dashboard should contain:
