@@ -1755,7 +1755,7 @@ class LxdCharm(CharmBase):
 
     def lxd_monitor_lifecycle(self) -> None:
         """Monitor lifecycle events (blocking)."""
-        event_types = set([pylxd.EventType.Lifecycle])
+        event_types = {pylxd.EventType.Lifecycle}
         events = pylxd.Client().events(event_types=event_types)
         events.connect()
         events.run()
@@ -2051,7 +2051,7 @@ class LxdCharm(CharmBase):
             snap_key = k.replace("snap-config-", "", 1).replace("-", ".")
 
             # Set the snap config
-            snap_set_list.append("%s=%s" % (snap_key, snap_value))
+            snap_set_list.append(f"{snap_key}={snap_value}")
 
             # Keys that require a reboot
             if k.startswith("snap-config-lxcfs-"):
