@@ -1,0 +1,14 @@
+name: Auto-update Charm Libraries
+on:
+  # Manual trigger
+  workflow_dispatch:
+  # Check for updates every 12 hours
+  schedule:
+    - cron: "17 */12 * * *"
+
+jobs:
+  update-lib:
+    name: Check libraries
+    uses: canonical/observability/.github/workflows/update-libs.yaml@main
+    secrets: inherit
+
