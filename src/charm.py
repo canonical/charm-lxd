@@ -1488,9 +1488,12 @@ class LxdCharm(CharmBase):
         proceed with the removal.
         """
         client = pylxd.Client()
-        if not client.cluster.enabled:
-            logger.debug(f"Clustering not enabled for {member}")
-            return
+        try:
+            if not client.cluster.enabled:
+                logger.debug(f"Clustering not enabled for {member}")
+                return
+        except AttributeError:
+            logger.debug("pylxd is too old, the cluster.enabled attribute is missing")
 
         try:
             m = client.cluster.members.get(member)
