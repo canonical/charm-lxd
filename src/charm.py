@@ -2007,6 +2007,8 @@ class LxdCharm(CharmBase):
         client = pylxd.Client()
         try:
             client.certificates.create(**config)
+        except pylxd.exceptions.Conflict:
+            logger.debug(f"Certificate for {name} already trusted")
         except pylxd.exceptions.LXDAPIException as e:
             logger.error(f"Failed to add certificated: {e}")
             return False
