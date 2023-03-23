@@ -25,6 +25,7 @@ from ops.charm import (
     CharmBase,
     ConfigChangedEvent,
     InstallEvent,
+    RelationBrokenEvent,
     RelationChangedEvent,
     RelationCreatedEvent,
     RelationDepartedEvent,
@@ -127,6 +128,7 @@ class LxdCharm(CharmBase):
         self.framework.observe(
             self.on.grafana_dashboard_relation_changed, self._on_grafana_dashboard_relation_changed
         )
+        self.framework.observe(self.on.https_relation_broken, self._on_https_relation_broken)
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
         self.framework.observe(
@@ -905,6 +907,26 @@ class LxdCharm(CharmBase):
             }
         )
         logger.debug("LXD dashboard sent to Grafana")
+
+    def _on_https_relation_broken(self, event: RelationBrokenEvent) -> None:
+        """Remove the client certificate of the departed app.
+
+        Look through all the certificate to see if one matches the name of
+        the departed app and with the ":autoremove" suffix.
+
+        Certificates tied to apps are shared among units so they should be removed
+        only when the relation is broken indicating all remote units are gone.
+
+        If clustered, only the leader unit needs to take action.
+        """
+        # In cluster mode, only the leader needs to handle the trust removal
+        if self.config.get("mode", "") == "cluster":
+            if not self.unit.is_leader() or not self._stored.lxd_clustered:
+                return
+
+        fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.app.name}:autoremove")
+        if fingerprint:
+            self.lxd_trust_remove(fingerprint)
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
         """Add the received client certificate to the trusted list.
