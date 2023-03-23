@@ -160,7 +160,6 @@ class LxdCharm(CharmBase):
         if not self.peers or not bag or not key:
             return {}
         d = json.loads(self.peers.data[bag].get(key, "{}"))
-        logger.debug(f"{bag.name}.get('{key}'): {d}")
         if isinstance(d, Dict):
             return d
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
@@ -171,7 +170,6 @@ class LxdCharm(CharmBase):
         if not self.peers or not bag or not key:
             return []
         d = json.loads(self.peers.data[bag].get(key, "[]"))
-        logger.debug(f"{bag.name}.get('{key}'): {d}")
         if isinstance(d, List):
             return d
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
@@ -182,7 +180,6 @@ class LxdCharm(CharmBase):
         if not self.peers or not bag or not key:
             return ""
         d = self.peers.data[bag].get(key, "")
-        logger.debug(f"{bag.name}.get('{key}'): {d}")
         if isinstance(d, str):
             return d
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
@@ -193,7 +190,6 @@ class LxdCharm(CharmBase):
         if not self.peers or not bag or not key:
             return ""
         d = self.peers.data[bag].pop(key, "")
-        logger.debug(f"{bag.name}.pop('{key}'): {d}")
         if isinstance(d, str):
             return d
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
@@ -203,21 +199,18 @@ class LxdCharm(CharmBase):
         """Put a dict into the peer data bag if not there or different."""
         old_data: Dict = self.get_peer_data_dict(bag, key)
         if old_data != data:
-            logger.debug(f"{bag.name}['{key}']={data}")
             self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
 
     def set_peer_data_list(self, bag, key: str, data: List) -> None:
         """Put a list into the peer data bag if not there or different."""
         old_data: List = self.get_peer_data_list(bag, key)
         if old_data != data:
-            logger.debug(f"{bag.name}['{key}']={data}")
             self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
 
     def set_peer_data_str(self, bag, key: str, data: str) -> None:
         """Put a str into the peer data bag if not there or different."""
         old_data: str = self.get_peer_data_str(bag, key)
         if old_data != data:
-            logger.debug(f"{bag.name}['{key}']={data}")
             self.peers.data[bag][key] = data
 
     def is_peer_data_version_supported(self, bag) -> bool:
