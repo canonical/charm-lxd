@@ -931,20 +931,27 @@ class LxdCharm(CharmBase):
                 event.defer()
                 return
 
-        d = event.relation.data[event.unit]
-        version = d.get("version")
+        # If the remote side is clustered, it will use the app bag
+        # if not clustered, the unit bag will be used
+        d: Dict = {}
+        for bag in (event.app, event.unit):
+            if not bag:
+                continue
 
-        if not version:
-            logger.error(f"Missing version in {event.unit.name}")
-            return
+            d = event.relation.data[bag]
+            if d.get("version", "") == "1.0":
+                logger.debug(f"Valid version found in {bag.name}")
+                break
+            else:
+                logger.error(f"Incompatible/missing version found in {bag.name}")
 
-        if version != "1.0":
-            logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
+        if not d or not bag:
+            logger.error("No compatible version found in any data bags")
             return
 
         cert = d.get("certificate", "")
         if not cert:
-            logger.error(f"Missing certificate in {event.unit.name}")
+            logger.error(f"Missing certificate in {bag.name}")
             return
 
         # Convert from string to bool
@@ -954,7 +961,7 @@ class LxdCharm(CharmBase):
         projects = d.get("projects", "")
 
         # Only add the cert if not already trusted
-        cert_name = f"juju-relation-{event.unit.name}"
+        cert_name = f"juju-relation-{bag.name}"
         if not self.lxd_trust_fingerprint(cert_name):
             if autoremove:
                 cert_name += ":autoremove"
