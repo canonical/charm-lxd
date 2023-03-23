@@ -907,7 +907,10 @@ class LxdCharm(CharmBase):
         logger.debug("LXD dashboard sent to Grafana")
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
-        """Add the received client certificate to the trusted list."""
+        """Add the received client certificate to the trusted list.
+
+        If clustered, only the leader unit needs to take action.
+        """
         # Relation cannot be rejected so notify the operator if it won't
         # be usable and don't touch the remote unit data bag at all
         if not self._stored.config["lxd-listen-https"]:
@@ -918,8 +921,15 @@ class LxdCharm(CharmBase):
             return
 
         # In cluster mode, only the leader needs to handle the received cert
-        if self._stored.lxd_clustered and not self.unit.is_leader():
-            return
+        if self.config.get("mode", "") == "cluster":
+            if not self.unit.is_leader():
+                return
+
+            # Unable to accept certificate because our cluster isn't bootstrapped yet
+            if not self._stored.lxd_clustered:
+                logger.debug("Cluster not bootstrapped, deferring")
+                event.defer()
+                return
 
         d = event.relation.data[event.unit]
         version = d.get("version")
@@ -943,24 +953,25 @@ class LxdCharm(CharmBase):
 
         projects = d.get("projects", "")
 
-        name = f"juju-relation-{event.unit.name}"
+        # Only add the cert if not already trusted
+        cert_name = f"juju-relation-{event.unit.name}"
+        if not self.lxd_trust_fingerprint(cert_name):
+            if autoremove:
+                cert_name += ":autoremove"
 
-        # Unconditionally remove the cert (ignoring the :autoremove suffix) prior to adding it
-        self.lxd_trust_remove(name, opportunistic=True)
-        if autoremove:
-            name += ":autoremove"
-
-        if self.lxd_trust_add(cert=cert, name=name, projects=projects):
-            msg = "The client certificate is now trusted"
-            if projects:
-                msg += f" for the following project(s): {projects}"
-            logger.info(msg)
+            if self.lxd_trust_add(cert=cert, name=cert_name, projects=projects):
+                msg = "The client certificate is now trusted"
+                if projects:
+                    msg += f" for the following project(s): {projects}"
+                logger.info(msg)
+            else:
+                msg = "Failed to add the certificate to the trusted list"
+                if projects:
+                    msg += f" for the following project(s): {projects}"
+                logger.error(msg)
+                return
         else:
-            msg = "Failed to add the certificate to the trusted list"
-            if projects:
-                msg += f" for the following project(s): {projects}"
-            logger.error(msg)
-            return
+            logger.debug(f"The client certificate ({cert_name=}) was already trusted")
 
         host_env = pylxd.Client().host_info["environment"]
         d = {
@@ -975,10 +986,29 @@ class LxdCharm(CharmBase):
         # otherwise put it in the unit data bag
         if self._stored.lxd_clustered:
             event.relation.data[self.app].update(d)
-            logger.debug(f"Connection information put in {self.app.name}")
+            logger.debug(f"Connection information put in {self.app.name} app data")
         else:
             event.relation.data[self.unit].update(d)
-            logger.debug(f"Connection information put in {self.unit.name}")
+            logger.debug(f"Connection information put in {self.unit.name} unit data")
+
+    def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
+        """Remove the client certificate of the departed unit.
+
+        Look through all the certificate to see if one matches the name of
+        the departed unit and with the ":autoremove" suffix.
+
+        If clustered, only the leader unit needs to take action.
+        """
+        # In cluster mode, only the leader needs to handle the trust removal
+        if self.config.get("mode", "") == "cluster":
+            if not self.unit.is_leader() or not self._stored.lxd_clustered:
+                return
+
+        fingerprint: str = self.lxd_trust_fingerprint(
+            f"juju-relation-{event.unit.name}:autoremove"
+        )
+        if fingerprint:
+            self.lxd_trust_remove(fingerprint)
 
     def _on_loki_push_api_endpoint_joined(self, event: RelationJoinedEvent):
         """Configure LXD to send logs to Loki."""
@@ -1027,15 +1057,6 @@ class LxdCharm(CharmBase):
         except pylxd.exceptions.LXDAPIException as e:
             logger.error(f"Failed to set loki.api.url: {e}")
             return
-
-    def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
-        """Remove the client certificate of the departed unit.
-
-        Look through all the certificate to see if one matches the name of
-        the departed unit and with the ":autoremove" suffix.
-        """
-        to_delete = f"juju-relation-{event.unit.name}:autoremove"
-        self.lxd_trust_remove(name=to_delete)
 
     def _on_ovsdb_cms_relation_changed(self, event: RelationChangedEvent) -> None:
         """Assemble a DB connection string to connect to OVN."""
@@ -1144,8 +1165,11 @@ class LxdCharm(CharmBase):
             )
             return
 
-        to_delete = f"{event.unit.name}-metrics:autoremove".replace("/", "_")
-        self.lxd_trust_remove(name=to_delete)
+        fingerprint: str = self.lxd_trust_fingerprint(
+            f"{event.unit.name}-metrics:autoremove".replace("/", "_")
+        )
+        if fingerprint:
+            self.lxd_trust_remove(fingerprint)
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
