@@ -75,10 +75,10 @@ class LxdCharm(CharmBase):
             addresses={},
             config={},
             inside_container=False,
-            lxd_binary_path=None,
+            lxd_binary_path="",
             lxd_clustered=False,
             lxd_initialized=False,
-            lxd_snap_path=None,
+            lxd_snap_path="",
             ovn_certificates_present=False,
             reboot_required=False,
         )
@@ -142,10 +142,10 @@ class LxdCharm(CharmBase):
 
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
         """Retrieve and add a client certificate to the trusted list."""
-        name = event.params.get("name", "unknown")
-        cert = event.params.get("cert")
-        cert_url = event.params.get("cert-url")
-        projects = event.params.get("projects")
+        name: str = event.params.get("name", "unknown")
+        cert: str = event.params.get("cert", "")
+        cert_url: str = event.params.get("cert-url", "")
+        projects: str = event.params.get("projects", "")
 
         if not cert and not cert_url:
             msg = "One of cert or cert-url parameter needs to be provided."
@@ -163,7 +163,7 @@ class LxdCharm(CharmBase):
                 .encode()
             )
             # Ignore the cert-url param if a cert was provided
-            cert_url = None
+            cert_url = ""
 
         if cert_url and not (cert_url.startswith("http://") or cert_url.startswith("https://")):
             msg = 'The cert-url parameter needs to start with "http://" or "https://".'
@@ -858,7 +858,7 @@ class LxdCharm(CharmBase):
             logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
             return
 
-        cert = d.get("certificate")
+        cert = d.get("certificate", "")
         if not cert:
             logger.error(f"Missing certificate in {event.unit.name}")
             return
@@ -869,7 +869,7 @@ class LxdCharm(CharmBase):
         autoremove = d.get("autoremove", False)
         autoremove = autoremove in ("True", "true")
 
-        projects = d.get("projects")
+        projects = d.get("projects", "")
 
         name = f"juju-relation-{event.unit.name}"
 
@@ -1154,9 +1154,9 @@ class LxdCharm(CharmBase):
             logger.debug("No proxy config from Juju.")
             return
 
-        http_proxy = None
-        https_proxy = None
-        no_proxy = None
+        http_proxy = ""
+        https_proxy = ""
+        no_proxy = ""
 
         with open(juju_proxy, encoding="UTF-8") as f:
             for line in f:
@@ -1671,6 +1671,7 @@ class LxdCharm(CharmBase):
 
                 # Configure the network
                 if network_dev:
+                    network_config: Dict = {}
                     if network_dev == "lxdfan0":  # try to find a valid subnet to use for FAN
                         try:
                             fan_address = self.juju_space_get_address("fan", require_ipv4=True)
@@ -1684,9 +1685,7 @@ class LxdCharm(CharmBase):
                             msg = "Can't find a valid subnet for FAN, falling back to lxdbr0"
                             self.unit_maintenance(msg)
                             network_dev = "lxdbr0"
-                            network_config = None
-                    else:
-                        network_config = None
+                            network_config = {}
 
                     self.unit_maintenance(f"Configuring network bridge ({network_dev})")
                     client.networks.create(network_dev, config=network_config)
@@ -1959,22 +1958,21 @@ class LxdCharm(CharmBase):
     def resource_sideload(self) -> None:
         """Sideload resources."""
         # Multi-arch support
-        arch = os.uname().machine
+        arch: str = os.uname().machine
+        possible_archs: List[str] = [arch]
         if arch == "x86_64":
             possible_archs = ["x86_64", "amd64"]
-        else:
-            possible_archs = [arch]
 
         # LXD snap
-        lxd_snap_resource = None
-        fname_suffix = ".snap"
+        lxd_snap_resource: str = ""
+        fname_suffix: str = ".snap"
         try:
             # Note: self._stored can only store simple data types (int/float/dict/list/etc)
             lxd_snap_resource = str(self.model.resources.fetch("lxd-snap"))
         except ModelError:
             pass
 
-        tmp_dir = None
+        tmp_dir = ""
         if lxd_snap_resource and tarfile.is_tarfile(lxd_snap_resource):
             logger.debug(f"{lxd_snap_resource} is a tarball; unpacking")
             tmp_dir = tempfile.mkdtemp()
@@ -1997,7 +1995,7 @@ class LxdCharm(CharmBase):
                 os.rmdir(tmp_dir)
 
         # LXD binary
-        lxd_binary_resource = None
+        lxd_binary_resource: str = ""
         fname_suffix = ""
         try:
             # Note: self._stored can only store simple data types (int/float/dict/list/etc)
@@ -2005,7 +2003,7 @@ class LxdCharm(CharmBase):
         except ModelError:
             pass
 
-        tmp_dir = None
+        tmp_dir = ""
         if lxd_binary_resource and tarfile.is_tarfile(lxd_binary_resource):
             logger.debug(f"{lxd_binary_resource} is a tarball; unpacking")
             tmp_dir = tempfile.mkdtemp()
@@ -2145,8 +2143,8 @@ class LxdCharm(CharmBase):
             logger.debug("Reverting to LXD snap from snapstore")
             channel = self._stored.config["snap-channel"]
             cmd = ["snap", "refresh", "lxd", f"--channel={channel}", "--amend"]
-            alias = None
-            enable = None
+            alias = []
+            enable = []
         else:
             logger.debug("Sideloading LXD snap")
             cmd = ["snap", "install", "--dangerous", self._stored.lxd_snap_path]
