@@ -148,6 +148,81 @@ class LxdCharm(CharmBase):
             self._on_prometheus_manual_relation_departed,
         )
 
+    @property
+    def peers(self):
+        """Fetch the cluster relation."""
+        return self.model.get_relation("cluster")
+
+    def get_peer_data_dict(self, bag, key: str) -> Dict:
+        """Retrieve a dict from the peer data bag."""
+        if not self.peers or not bag or not key:
+            return {}
+        d = json.loads(self.peers.data[bag].get(key, "{}"))
+        logger.debug(f"{bag.name}.get('{key}'): {d}")
+        if isinstance(d, Dict):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return {}
+
+    def get_peer_data_list(self, bag, key: str) -> List:
+        """Retrieve a list from the peer data bag."""
+        if not self.peers or not bag or not key:
+            return []
+        d = json.loads(self.peers.data[bag].get(key, "[]"))
+        logger.debug(f"{bag.name}.get('{key}'): {d}")
+        if isinstance(d, List):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return []
+
+    def get_peer_data_str(self, bag, key: str) -> str:
+        """Retrieve a str from the peer data bag."""
+        if not self.peers or not bag or not key:
+            return ""
+        d = self.peers.data[bag].get(key, "")
+        logger.debug(f"{bag.name}.get('{key}'): {d}")
+        if isinstance(d, str):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return ""
+
+    def pop_peer_data_str(self, bag, key: str) -> Union[Dict, str]:
+        """Pop a str out of the peer data bag."""
+        if not self.peers or not bag or not key:
+            return ""
+        d = self.peers.data[bag].pop(key, "")
+        logger.debug(f"{bag.name}.pop('{key}'): {d}")
+        if isinstance(d, str):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return ""
+
+    def set_peer_data_dict(self, bag, key: str, data: Dict) -> None:
+        """Put a dict into the peer data bag if not there or different."""
+        old_data: Dict = self.get_peer_data_dict(bag, key)
+        if old_data != data:
+            logger.debug(f"{bag.name}['{key}']={data}")
+            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+
+    def set_peer_data_list(self, bag, key: str, data: List) -> None:
+        """Put a list into the peer data bag if not there or different."""
+        old_data: List = self.get_peer_data_list(bag, key)
+        if old_data != data:
+            logger.debug(f"{bag.name}['{key}']={data}")
+            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+
+    def set_peer_data_str(self, bag, key: str, data: str) -> None:
+        """Put a str into the peer data bag if not there or different."""
+        old_data: str = self.get_peer_data_str(bag, key)
+        if old_data != data:
+            logger.debug(f"{bag.name}['{key}']={data}")
+            self.peers.data[bag][key] = data
+
+    def is_peer_data_version_supported(self, bag) -> bool:
+        """Ensure the version in the peer data bag matches what we support."""
+        version: str = self.get_peer_data_str(bag, "version")
+        return version == "1.0"
+
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
         """Retrieve and add a client certificate to the trusted list."""
         name: str = event.params.get("name", "unknown")
@@ -556,158 +631,155 @@ class LxdCharm(CharmBase):
         ):
             self.unit_active()
 
-    def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
-        """If not in cluster mode: do nothing.
+    def _leader_issue_join_token(self, event: RelationChangedEvent) -> None:
+        """Check if non-leader units are in need of join tokens."""
+        if not event.unit:
+            logger.debug("No available data yet")
+            return
 
-        * If we are a leader: update the prometheus-manual data and issue a join token.
-        * If we are a new unit: use the newly minted token to join the cluster.
+        if not self.is_peer_data_version_supported(event.unit):
+            logger.error(f"Incompatible/missing version found in {event.unit.name}")
+            return
+
+        hostname: str = self.get_peer_data_str(event.unit, "hostname")
+        if not hostname:
+            # Clear the app data bag of any consumed token associated with the remote unit
+            if self.pop_peer_data_str(self.app, event.unit.name):
+                logger.debug(f"Cleared consumed token for {event.unit.name}")
+            else:
+                logger.error(f"Missing hostname in {event.unit.name}")
+            return
+
+        if self.get_peer_data_str(self.app, event.unit.name):
+            logger.debug(f"{event.unit.name} ({hostname}) has not used its join token yet")
+            return
+
+        logger.debug(f"Cluster join token request received from {event.unit.name} for {hostname}")
+        token: str = self.lxd_cluster_add_token(hostname)
+        if not token:
+            logger.error(f"Unable to add a join token for hostname={hostname}")
+            return
+
+        # Remove the "description" from member_config to reduce the size of the data bag
+        member_config: List[Dict] = pylxd.Client().cluster.get().member_config
+        for c in member_config:
+            _ = c.pop("description", None)
+
+        # XXX: the members dict maintains an assiciation between the Juju unit name
+        #      and the LXD cluster member name (hostname/uname). This is needed when
+        #      removing cluster members when they depart from the relation.
+
+        # Update the members list in the app data bag with the hostname of the unit that is
+        # about to join the cluster
+        members: Dict = self.get_peer_data_dict(self.app, "members")
+        if not members:
+            # If there is no members list, we need to add ourself first
+            my_hostname = os.uname().nodename
+            logger.debug(f"Initializing the members list with {self.unit.name} ({my_hostname})")
+            members = {self.unit.name: my_hostname}
+
+        # Check for hostname colisions
+        for unit_name, unit_hostname in members.items():
+            if hostname == unit_hostname:
+                logger.error(f"Hostname colision with {unit_name} ({hostname})")
+                return
+
+        logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
+        members[event.unit.name] = hostname
+
+        # If we made it here, potential problems should have been handled already so it
+        # is time to share the information needed by the remote unit to join the cluster
+        self.set_peer_data_str(self.app, event.unit.name, token)
+        self.set_peer_data_list(self.app, "member_config", member_config)
+        self.set_peer_data_dict(self.app, "members", members)
+
+        logger.debug(f"Cluster joining information added for {event.unit.name}")
+
+    def _non_leader_join_cluster(self, event: RelationChangedEvent) -> None:
+        """Check if the leader issued a cluster join token for us."""
+        # Exit early if already clustered
+        if self._stored.lxd_clustered:
+            return
+
+        # Check versions of data bags before using them
+        for bag in (self.unit, self.app):
+            if not self.is_peer_data_version_supported(bag):
+                logger.error(f"Incompatible/missing version found in {bag.name}")
+                return
+
+        # As a non-leader not yet joined to a cluster, check the app data bag for
+        # our join token and the member_config
+        my_token: str = self.get_peer_data_str(self.app, self.unit.name)
+        if not my_token:
+            logger.error(f"Missing token for {self.unit.name} in {self.app.name}")
+            return
+
+        cluster_member_config: List[Dict] = self.get_peer_data_list(self.app, "member_config")
+        if not cluster_member_config:
+            logger.error(f"Missing member_config in {self.app.name}")
+            return
+
+        # Use the token and member_config to join the cluster
+        logger.debug(f"Cluster joining information found in {self.app.name}")
+        self.lxd_cluster_join(my_token, cluster_member_config)
+
+        # Remove our hostname from our unit data bag to signify
+        # we no longer need a join token to be emitted
+        _ = self.pop_peer_data_str(self.unit, "hostname")
+
+        logger.debug(f"The unit {self.unit.name} is now part of the cluster")
+
+    def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Keep unit information up to date and cluster management.
+
+        All units need to keep their unit data bag up to date.
+
+        The leader unit needs to:
+        * Issue join tokens if mode=cluster
+
+        Non-leaders units need to:
+        * Join the cluster using their join token if mode=cluster
         """
-        # All units automatically get a cluster peer relation irrespective of the mode
-        # so do nothing if not in cluster mode
+        # Keep the metrics_endpoint data up to date
+        self.lxd_update_prometheus_manual_scrape_job()
+
+        # Nothing left to do if mode != cluster
         if self.config.get("mode") != "cluster":
             return
 
         if self.unit.is_leader():
-            if not event.unit:
-                logger.debug("No available data yet")
-                return
-
-            # The leader needs to look for join token to issue in the unit data bag
-            d = event.relation.data[event.unit]
-            version = d.get("version")
-
-            if not version:
-                logger.error(f"Missing version in {event.unit.name}")
-                return
-
-            if version != "1.0":
-                logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
-                return
-
-            hostname = d.get("hostname")
-            if not hostname:
-                # Clear the app data bag of any consumed token associated with the remote unit
-                if event.relation.data[self.app].pop(event.unit.name, None):
-                    logger.debug(f"Cleared consumed token for {event.unit.name}")
-                else:
-                    logger.error(f"Missing hostname in {event.unit.name}")
-                return
-
-            logger.debug(f"Cluster join token request received from {event.unit.name}")
-
-            token = self.lxd_cluster_add_token(hostname)
-            if not token:
-                logger.error(f"Unable to add a join token for hostname={hostname}")
-                return
-
-            member_config = pylxd.Client().cluster.get().member_config
-
-            # Strip the "description" and convert to compact JSON string
-            for c in member_config:
-                _ = c.pop("description", None)
-            member_config = json.dumps(member_config, separators=(",", ":"))
-
-            # Update the members list in the app data bag with the hostname of the unit that is
-            # about to join the cluster
-            members = event.relation.data[self.app].get("members")
-            if members:
-                members = json.loads(members)
-            else:
-                # If there is no members list, it means we need to add ourself first
-                # and then the newly joined member
-                my_hostname = os.uname().nodename
-                logger.debug(
-                    f"Initializing the members list with {self.unit.name} ({my_hostname})"
-                )
-                members = {self.unit.name: my_hostname}
-
-            logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
-            members[event.unit.name] = hostname
-
-            # Convert the members list to a compact JSON string
-            members = json.dumps(members, separators=(",", ":"))
-
-            event.relation.data[self.app].update(
-                {
-                    "version": "1.0",
-                    event.unit.name: token,
-                    "member_config": member_config,
-                    "members": members,
-                }
-            )
-            logger.debug(f"Cluster joining information added for {event.unit.name}")
-        elif not self._stored.lxd_clustered:  # Exit early if already clustered
-
-            # As a non leader, check if we received a token in the app data bag
-            d = event.relation.data[self.app]
-            version = d.get("version")
-
-            if not version:
-                logger.error(f"Missing version in {self.app.name}")
-                return
-
-            if version != "1.0":
-                logger.error(f"Incompatible version ({version}) found in {self.app.name}")
-                return
-
-            token = d.get(self.unit.name)
-            if not token:
-                logger.error(f"Missing token for {self.unit.name} in {self.app.name}")
-                return
-
-            member_config = d.get("member_config")
-            if not member_config:
-                logger.error(f"Missing member_config in {self.app.name}")
-                return
-
-            # Hand over the token and member_config
-            logger.debug(f"Cluster joining information found in {self.app.name}")
-            self.lxd_cluster_join(token, member_config)
-
-            # Remove our hostname from our unit data bag to signify
-            # we no longer need a join token to be emitted
-            _ = event.relation.data[self.unit].pop("hostname", None)
-
-            logger.debug(f"The unit {self.unit.name} is now part of the cluster")
+            self._leader_issue_join_token(event)
+        else:
+            self._non_leader_join_cluster(event)
 
     def _on_cluster_relation_created(self, event: RelationCreatedEvent) -> None:
-        """If not in cluster mode: do nothing.
+        """Populate the cluster unit data bag with information to communicate to our peers.
 
-        Add our hostname to the unit data bag which will be used to issue a join token later on.
+        If mode=cluster, non-leader add their hostname to the unit data bag to signal the
+        leader that they need a join token issued for them.
         """
-        # All units automatically get a cluster peer relation irrespective of the mode
-        # so do nothing if not in cluster mode
+        # Advertise our supported version
+        self.set_peer_data_str(self.unit, "version", "1.0")
+
+        # Advertise the supported version in the app data bag
+        if self.unit.is_leader():
+            self.set_peer_data_str(self.app, "version", "1.0")
+
+        # Nothing left to do if mode != cluster
         if self.config.get("mode") != "cluster":
             return
 
-        # Save our metrics endpoint address for later reuse
-        metrics_endpoint = self.lxd_get_metrics_endpoint()
-        event.relation.data[self.unit].update(
-            {
-                "metrics_endpoint": metrics_endpoint,
-            }
-        )
-        logger.debug(f"Saved metrics endpoint ({metrics_endpoint}) to {self.unit.name}")
-
-        # The leader will be the one creating the cluster so no join token needed
+        # The leader does not need to request a join token
         if self.unit.is_leader():
-            logger.debug("Not requesting cluster join token (we are leader)")
             return
 
         # Request a join token by adding our hostname to the unit data bag
-        event.relation.data[self.unit].update(
-            {
-                "version": "1.0",
-                "hostname": os.uname().nodename,
-            }
-        )
-        logger.debug("Cluster join token requested")
+        hostname: str = os.uname().nodename
+        self.set_peer_data_str(self.unit, "hostname", hostname)
+        self.unit_maintenance(f"Cluster join token requested ({hostname})")
 
     def _on_cluster_relation_departed(self, event: RelationDepartedEvent) -> None:
-        # All units automatically get a cluster peer relation irrespective of the mode
-        if self.config.get("mode") != "cluster":
-            return
-
+        """Handle cluster members going away. Nothing to do if not clustered."""
         # If we never joined, no point in departing
         if not self._stored.lxd_clustered:
             return
@@ -716,36 +788,31 @@ class LxdCharm(CharmBase):
         if not self.unit.is_leader():
             return
 
+        if not self.is_peer_data_version_supported(self.app):
+            logger.error(f"Incompatible/missing version found in {self.app.name}")
+            return
+
         # Load the list of cluster members
-        members = event.relation.data[self.app].get("members")
+        members: Dict = self.get_peer_data_dict(self.app, "members")
         if not members:
             logger.error(f"Unable to get the cluster members list from {self.app.name}")
             return
 
-        members = json.loads(members)
-
         # Lookup the hostname of the unit that left
-        hostname = members.pop(event.unit.name, None)
+        hostname: str = members.pop(event.unit.name, "")
         if not hostname:
             logger.error(
                 f"Unable to find the hostname of {event.unit.name}, not removing from the cluster"
             )
             return
-        else:
-            logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
 
         # Remove it from the cluster
+        logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
         self.lxd_cluster_remove(hostname)
 
         # Save the updated cluster members list
-        members = json.dumps(members, separators=(",", ":"))
-        event.relation.data[self.app].update(
-            {
-                "members": members,
-            }
-        )
-
-        logger.debug(f"The unit {event.unit.name} is no longer part of the cluster")
+        self.set_peer_data_dict(self.app, "members", members)
+        logger.info(f"The unit {event.unit.name} is no longer part of the cluster")
 
     def _on_grafana_dashboard_relation_changed(self, event: RelationChangedEvent) -> None:
         """Provide the LXD dashboard to Grafana."""
@@ -1302,14 +1369,13 @@ class LxdCharm(CharmBase):
 
         return token
 
-    def lxd_cluster_join(self, token: str, member_config: str) -> None:
+    def lxd_cluster_join(self, token: str, member_config: List[Dict]) -> None:
         """Join an existing cluster."""
         logger.debug("Joining cluster")
-        conf = json.loads(member_config)
 
         # If a local storage device was provided, it needs to be added in the storage-pool
         if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
-            for m in conf:
+            for m in member_config:
                 if m.get("entity") == "storage-pool" and m.get("key") == "source":
                     dev = str(self.model.storages["local"][0].location)
                     m["value"] = dev
@@ -1327,7 +1393,7 @@ class LxdCharm(CharmBase):
             "projects": [],
             "cluster": {
                 "enabled": True,
-                "member_config": conf,
+                "member_config": member_config,
                 "server_address": cluster_address,
                 "cluster_token": token,
             },
