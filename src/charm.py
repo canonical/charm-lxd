@@ -744,7 +744,7 @@ class LxdCharm(CharmBase):
         self.lxd_update_prometheus_manual_scrape_job()
 
         # Nothing left to do if mode != cluster
-        if self.config.get("mode") != "cluster":
+        if self.config.get("mode", "") != "cluster":
             return
 
         if self.unit.is_leader():
@@ -766,7 +766,7 @@ class LxdCharm(CharmBase):
             self.set_peer_data_str(self.app, "version", "1.0")
 
         # Nothing left to do if mode != cluster
-        if self.config.get("mode") != "cluster":
+        if self.config.get("mode", "") != "cluster":
             return
 
         # The leader does not need to request a join token
@@ -1191,7 +1191,7 @@ class LxdCharm(CharmBase):
                 return False
 
         # lxd-preseed can only be set when mode=standalone
-        if self.config.get("lxd-preseed") and self.config.get("mode") != "standalone":
+        if self.config.get("lxd-preseed", "") and self.config.get("mode", "") != "standalone":
             self.unit_blocked("Can't provide lxd-preseed when mode != standalone")
             return False
 
@@ -1518,7 +1518,7 @@ class LxdCharm(CharmBase):
 
     def lxd_get_prometheus_targets(self) -> List[str]:
         """Return a list of targets to be scraped by Prometheus."""
-        if self.config.get("mode") != "cluster":
+        if self.config.get("mode", "") != "cluster":
             # The unit's metrics_endpoint is the only target for the scape_job
             return [self.lxd_get_metrics_endpoint()]
 
@@ -1660,10 +1660,10 @@ class LxdCharm(CharmBase):
 
     def lxd_init(self) -> None:
         """Apply initial configuration of LXD."""
-        mode = self.config.get("mode")
+        mode: str = self.config.get("mode", "")
         self.unit_maintenance(f"Initializing LXD in {mode} mode")
 
-        preseed = self.config.get("lxd-preseed")
+        preseed: str = self.config.get("lxd-preseed", "")
 
         if preseed:
             assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
