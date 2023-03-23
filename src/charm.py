@@ -1981,6 +1981,7 @@ class LxdCharm(CharmBase):
                 break
             else:
                 logger.debug("Missing arch specific snap from tarball.")
+            tarball.close()
         else:
             self._stored.lxd_snap_path = lxd_snap_resource
 
@@ -2012,6 +2013,7 @@ class LxdCharm(CharmBase):
                 break
             else:
                 logger.debug("Missing arch specific binary from tarball.")
+            tarball.close()
         else:
             self._stored.lxd_binary_path = lxd_binary_resource
 
