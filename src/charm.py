@@ -157,10 +157,8 @@ class LxdCharm(CharmBase):
             # The received PEM needs to be mangled to be able to split()
             # on spaces without breaking the "-----BEGIN CERTIFICATE-----"
             # and "-----END CERTIFICATE-----" lines
-            cert = (
-                "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split())
-                .replace("CERTIFICATE", " CERTIFICATE", 2)
-                .encode()
+            cert = "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
+                "CERTIFICATE", " CERTIFICATE", 2
             )
             # Ignore the cert-url param if a cert was provided
             cert_url = ""
@@ -185,7 +183,7 @@ class LxdCharm(CharmBase):
                 logger.error(msg)
                 return
             else:
-                cert = response.read()
+                cert = response.read().decode()
 
         if not cert:
             msg = "Invalid/empty certificate provided/retrieved."
@@ -862,8 +860,6 @@ class LxdCharm(CharmBase):
         if not cert:
             logger.error(f"Missing certificate in {event.unit.name}")
             return
-        else:
-            cert = cert.encode()
 
         # Convert from string to bool
         autoremove = d.get("autoremove", False)
@@ -1539,7 +1535,7 @@ class LxdCharm(CharmBase):
 
             if client_cert:
                 self.lxd_trust_add(
-                    cert=client_cert.encode(),
+                    cert=client_cert,
                     name=remote_unit_name,
                     projects="",
                     metrics=True,
@@ -1867,10 +1863,10 @@ class LxdCharm(CharmBase):
     ) -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
-        config: Dict[str, Union[str, List[str], bool]] = {
+        config: Dict[str, Union[str, bytes, List[str], bool]] = {
             "name": name,
             "password": "",
-            "cert_data": cert,
+            "cert_data": cert.encode(),
         }
 
         if projects:
