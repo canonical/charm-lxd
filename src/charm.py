@@ -66,6 +66,14 @@ class LxdCharm(CharmBase):
 
     _stored = StoredState()
 
+    # default ports
+    ports: Dict[str, int] = {
+        "bgp": 179,
+        "dns": 53,
+        "https": 8443,
+        "metrics": 9100,
+    }
+
     def __init__(self, *args):
         """Initialize charm's variables."""
         super().__init__(*args)
@@ -1789,14 +1797,7 @@ class LxdCharm(CharmBase):
 
         Also save the boolean toggle to enable/disable the listener.
         """
-        # default ports
-        ports = {
-            "bgp": 179,
-            "dns": 53,
-            "https": 8443,
-            "metrics": 9100,
-        }
-        if not ports.get(listener):
+        if listener not in self.ports:
             logger.error(f"Invalid listener ({listener}) provided")
             return False
 
@@ -1839,7 +1840,7 @@ class LxdCharm(CharmBase):
             cmd = ["open-port"]
         else:
             cmd = ["close-port"]
-        cmd += [str(ports[listener]), "--endpoints", listener]
+        cmd += [str(self.ports[listener]), "--endpoints", listener]
         logger.debug(f"Calling {cmd}")
 
         try:
