@@ -1985,11 +1985,18 @@ class LxdCharm(CharmBase):
         self,
         name: str,
     ) -> str:
-        """Return the fingerprint of the client certificate with the provided name, if any."""
+        """Return the fingerprint of the client certificate with the provided name, if any.
+
+        If the provided name ends with ":autoremove" search for an exact match. Otherwise,
+        match on the name or name + the ":autoremove" suffix.
+        """
         client = pylxd.Client()
         # Enumerate all certs looking for one with a matching
         # name with or without a ":autoremove" suffix
+        assert name != ""
         possible_names: Tuple[str, str] = (name, f"{name}:autoremove")
+        if name.endswith(":autoremove"):
+            possible_names = (name, "")
         for c in client.certificates.all():
             if c.name in possible_names:
                 fingerprint: str = c.fingerprint
