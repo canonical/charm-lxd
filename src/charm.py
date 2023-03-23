@@ -550,8 +550,9 @@ class LxdCharm(CharmBase):
         logger.debug(f"PKI files required to connect to OVN using SSL saved to {ovn_dir}")
 
         # If we were previously waiting on a certificates relation we should now unblock
-        if isinstance(self.unit.status, BlockedStatus) and "'certificates' missing" in str(
-            self.unit.status
+        if (
+            isinstance(self.unit.status, BlockedStatus)
+            and "'certificates' missing" in self.unit.status.message
         ):
             self.unit_active()
 
@@ -1105,7 +1106,7 @@ class LxdCharm(CharmBase):
         if (
             not config_changed
             and isinstance(self.unit.status, BlockedStatus)
-            and "Can't modify lxd- keys after initialization:" in str(self.unit.status)
+            and "Can't modify lxd- keys after initialization:" in self.unit.status.message
         ):
             self.unit_active("Unblocking as the lxd- keys were reset to their initial values")
 
