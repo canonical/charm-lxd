@@ -1957,44 +1957,33 @@ class LxdCharm(CharmBase):
 
         return True
 
-    def lxd_trust_remove(
+    def lxd_trust_fingerprint(
         self,
-        name: str = "",
-        fingerprint: str = "",
-        opportunistic: bool = False,
-    ) -> bool:
-        """Remove a client certificate from the trusted list."""
-        if not name and not fingerprint:
-            logger.error("No name nor fingerprint provided, not removing any certificate")
-            return False
-
+        name: str,
+    ) -> str:
+        """Return the fingerprint of the client certificate with the provided name, if any."""
         client = pylxd.Client()
-
-        # If no fingerprint was provided, enumerate all certs looking for one with a matching
+        # Enumerate all certs looking for one with a matching
         # name with or without a ":autoremove" suffix
-        if not fingerprint:
-            possible_names = (name, f"{name}:autoremove")
-            for c in client.certificates.all():
-                if c.name in possible_names:
-                    fingerprint = c.fingerprint
-                    logger.debug(
-                        f"The certificate named {c.name} has the fingerprint: {fingerprint}"
-                    )
-                    break
+        possible_names: Tuple[str, str] = (name, f"{name}:autoremove")
+        for c in client.certificates.all():
+            if c.name in possible_names:
+                fingerprint: str = c.fingerprint
+                logger.debug(f"The certificate named {c.name} has the fingerprint: {fingerprint}")
+                return fingerprint
+        return ""
 
-        if not fingerprint:
-            if not opportunistic:
-                logger.error(f"No certificate found with the name {name}")
-            return False
-
+    def lxd_trust_remove(self, fingerprint: str) -> bool:
+        """Remove a client certificate from the trusted list using its fingerprint."""
+        client = pylxd.Client()
         try:
             c = client.certificates.get(fingerprint)
             logger.info(f"Removing {c.name}'s certificate ({fingerprint}) from the trusted list")
             c.delete()
-            return True
         except pylxd.exceptions.NotFound:
             logger.error(f"No certificate with fingerprint {fingerprint} found")
             return False
+        return True
 
     def lxd_trust_token(self, name: str, projects: str = "") -> str:
         """Get a client certificate add token."""
