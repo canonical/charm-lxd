@@ -58,11 +58,7 @@ class HttpsClientCharm(CharmBase):
             "certificate": self._stored.cert,
         }
 
-        autoremove = self.config.get("autoremove")
-        if autoremove:
-            d["autoremove"] = str(autoremove)
-
-        projects = self.config.get("projects")
+        projects: str = self.config.get("projects", "")
         if projects:
             d["projects"] = projects
 
