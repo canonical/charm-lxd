@@ -905,7 +905,7 @@ class LxdCharm(CharmBase):
         """Remove the client certificate of the departed app.
 
         Look through all the certificate to see if one matches the name of
-        the departed app and with the ":autoremove" suffix.
+        the departed app.
 
         Certificates tied to apps are shared among units so they should be removed
         only when the relation is broken indicating all remote units are gone.
@@ -917,7 +917,7 @@ class LxdCharm(CharmBase):
             if not self.unit.is_leader() or not self._stored.lxd_clustered:
                 return
 
-        fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.app.name}:autoremove")
+        fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.app.name}")
         if fingerprint:
             self.lxd_trust_remove(fingerprint)
 
@@ -969,18 +969,11 @@ class LxdCharm(CharmBase):
             logger.error(f"Missing certificate in {bag.name}")
             return
 
-        # Convert from string to bool
-        autoremove = d.get("autoremove", False)
-        autoremove = autoremove in ("True", "true")
-
         projects = d.get("projects", "")
 
         # Only add the cert if not already trusted
         cert_name = f"juju-relation-{bag.name}"
         if not self.lxd_trust_fingerprint(cert_name):
-            if autoremove:
-                cert_name += ":autoremove"
-
             if self.lxd_trust_add(cert=cert, name=cert_name, projects=projects):
                 msg = "The client certificate is now trusted"
                 if projects:
@@ -1017,7 +1010,7 @@ class LxdCharm(CharmBase):
         """Remove the client certificate of the departed unit.
 
         Look through all the certificate to see if one matches the name of
-        the departed unit and with the ":autoremove" suffix.
+        the departed unit.
 
         If clustered, only the leader unit needs to take action.
         """
@@ -1026,9 +1019,7 @@ class LxdCharm(CharmBase):
             if not self.unit.is_leader() or not self._stored.lxd_clustered:
                 return
 
-        fingerprint: str = self.lxd_trust_fingerprint(
-            f"juju-relation-{event.unit.name}:autoremove"
-        )
+        fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.unit.name}")
         if fingerprint:
             self.lxd_trust_remove(fingerprint)
 
@@ -1169,7 +1160,7 @@ class LxdCharm(CharmBase):
             return
 
         if event.unit:
-            remote_unit_name = f"{event.unit.name}-metrics:autoremove".replace("/", "_")
+            remote_unit_name = f"{event.unit.name}-metrics".replace("/", "_")
         else:
             remote_unit_name = ""
         self.lxd_update_prometheus_manual_scrape_job(remote_unit_name)
@@ -1188,7 +1179,7 @@ class LxdCharm(CharmBase):
             return
 
         fingerprint: str = self.lxd_trust_fingerprint(
-            f"{event.unit.name}-metrics:autoremove".replace("/", "_")
+            f"{event.unit.name}-metrics".replace("/", "_")
         )
         if fingerprint:
             self.lxd_trust_remove(fingerprint)
@@ -2012,22 +2003,15 @@ class LxdCharm(CharmBase):
         self,
         name: str,
     ) -> str:
-        """Return the fingerprint of the client certificate with the provided name, if any.
+        """Return the fingerprint of the client certificate with the provided name, if trusted.
 
-        If the provided name ends with ":autoremove" search for an exact match. Otherwise,
-        match on the name or name + the ":autoremove" suffix.
+        Return an empty str otherwise.
         """
         client = pylxd.Client()
-        # Enumerate all certs looking for one with a matching
-        # name with or without a ":autoremove" suffix
-        assert name != ""
-        possible_names: Tuple[str, str] = (name, f"{name}:autoremove")
-        if name.endswith(":autoremove"):
-            possible_names = (name, "")
         for c in client.certificates.all():
-            if c.name in possible_names:
+            if c.name == name:
                 fingerprint: str = c.fingerprint
-                logger.debug(f"The certificate named {c.name} has the fingerprint: {fingerprint}")
+                logger.debug(f"The certificate named {name} has the fingerprint: {fingerprint}")
                 return fingerprint
         return ""
 
