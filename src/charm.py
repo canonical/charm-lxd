@@ -151,6 +151,25 @@ class LxdCharm(CharmBase):
         )
 
     @property
+    def metrics_endpoint_target(self) -> str:
+        """Get the metrics endpoint target (IP:port).
+
+        First check if there is a dedicated metrics endpoint and fallback to the generic https
+        listener where metrics are also available.
+        """
+        port: int = self.ports["https"]
+        if self.config["lxd-listen-metrics"]:
+            port = self.ports["metrics"]
+
+        addr: str = self.juju_space_get_address("metrics") or self.juju_space_get_address("https")
+        if not addr:
+            return ""
+
+        if ":" in addr:
+            addr = f"[{addr}]"
+        return f"{addr}:{port}"
+
+    @property
     def peers(self):
         """Fetch the cluster relation."""
         return self.model.get_relation("cluster")
@@ -1556,10 +1575,17 @@ class LxdCharm(CharmBase):
         return f"{addr}:8443"
 
     def lxd_get_prometheus_targets(self) -> List[str]:
-        """Return a list of targets to be scraped by Prometheus."""
+        """Return a list of targets to be scraped by Prometheus.
+
+        In standalone mode, that's just this unit's metrics_endpoint.
+
+        In cluster mode, non-leader return an empty list. The leader
+        is the one that will return the list of targets' metrics_endpoint
+        based on units that have joined the cluster.
+        """
         if self.config.get("mode", "") != "cluster":
             # The unit's metrics_endpoint is the only target for the scape_job
-            return [self.lxd_get_metrics_endpoint()]
+            return [self.metrics_endpoint_target]
 
         if not self.unit.is_leader():
             # The unit is part of a cluster but not the app leader, so nothing to report
@@ -1593,7 +1619,7 @@ class LxdCharm(CharmBase):
             return []
 
         # Add leader's own metrics_endpoint
-        targets.append(self.lxd_get_metrics_endpoint())
+        targets.append(self.metrics_endpoint_target)
 
         targets.sort()
         return targets
@@ -1619,7 +1645,7 @@ class LxdCharm(CharmBase):
             return
 
         # Get the targets list which corresponds the units' metrics_endpoint
-        targets = self.lxd_get_prometheus_targets()
+        targets = self.metrics_endpoint_target
         if not targets:
             logger.debug(f"{self.unit.name} isn't aware of any targets for prometheus-manual")
             return
