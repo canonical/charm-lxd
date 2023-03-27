@@ -25,6 +25,7 @@ from ops.charm import (
     CharmBase,
     ConfigChangedEvent,
     InstallEvent,
+    RelationBrokenEvent,
     RelationChangedEvent,
     RelationCreatedEvent,
     RelationDepartedEvent,
@@ -66,6 +67,14 @@ class LxdCharm(CharmBase):
 
     _stored = StoredState()
 
+    # default ports
+    ports: Dict[str, int] = {
+        "bgp": 179,
+        "dns": 53,
+        "https": 8443,
+        "metrics": 9100,
+    }
+
     def __init__(self, *args):
         """Initialize charm's variables."""
         super().__init__(*args)
@@ -75,10 +84,10 @@ class LxdCharm(CharmBase):
             addresses={},
             config={},
             inside_container=False,
-            lxd_binary_path=None,
+            lxd_binary_path="",
             lxd_clustered=False,
             lxd_initialized=False,
-            lxd_snap_path=None,
+            lxd_snap_path="",
             ovn_certificates_present=False,
             reboot_required=False,
         )
@@ -119,6 +128,7 @@ class LxdCharm(CharmBase):
         self.framework.observe(
             self.on.grafana_dashboard_relation_changed, self._on_grafana_dashboard_relation_changed
         )
+        self.framework.observe(self.on.https_relation_broken, self._on_https_relation_broken)
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
         self.framework.observe(self.on.https_relation_departed, self._on_https_relation_departed)
         self.framework.observe(
@@ -140,12 +150,80 @@ class LxdCharm(CharmBase):
             self._on_prometheus_manual_relation_departed,
         )
 
+    @property
+    def peers(self):
+        """Fetch the cluster relation."""
+        return self.model.get_relation("cluster")
+
+    def get_peer_data_dict(self, bag, key: str) -> Dict:
+        """Retrieve a dict from the peer data bag."""
+        if not self.peers or not bag or not key:
+            return {}
+        d = json.loads(self.peers.data[bag].get(key, "{}"))
+        if isinstance(d, Dict):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return {}
+
+    def get_peer_data_list(self, bag, key: str) -> List:
+        """Retrieve a list from the peer data bag."""
+        if not self.peers or not bag or not key:
+            return []
+        d = json.loads(self.peers.data[bag].get(key, "[]"))
+        if isinstance(d, List):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return []
+
+    def get_peer_data_str(self, bag, key: str) -> str:
+        """Retrieve a str from the peer data bag."""
+        if not self.peers or not bag or not key:
+            return ""
+        d = self.peers.data[bag].get(key, "")
+        if isinstance(d, str):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return ""
+
+    def pop_peer_data_str(self, bag, key: str) -> Union[Dict, str]:
+        """Pop a str out of the peer data bag."""
+        if not self.peers or not bag or not key:
+            return ""
+        d = self.peers.data[bag].pop(key, "")
+        if isinstance(d, str):
+            return d
+        logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
+        return ""
+
+    def set_peer_data_dict(self, bag, key: str, data: Dict) -> None:
+        """Put a dict into the peer data bag if not there or different."""
+        old_data: Dict = self.get_peer_data_dict(bag, key)
+        if old_data != data:
+            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+
+    def set_peer_data_list(self, bag, key: str, data: List) -> None:
+        """Put a list into the peer data bag if not there or different."""
+        old_data: List = self.get_peer_data_list(bag, key)
+        if old_data != data:
+            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+
+    def set_peer_data_str(self, bag, key: str, data: str) -> None:
+        """Put a str into the peer data bag if not there or different."""
+        old_data: str = self.get_peer_data_str(bag, key)
+        if old_data != data:
+            self.peers.data[bag][key] = data
+
+    def is_peer_data_version_supported(self, bag) -> bool:
+        """Ensure the version in the peer data bag matches what we support."""
+        version: str = self.get_peer_data_str(bag, "version")
+        return version == "1.0"
+
     def _on_action_add_trusted_client(self, event: ActionEvent) -> None:
         """Retrieve and add a client certificate to the trusted list."""
-        name = event.params.get("name", "unknown")
-        cert = event.params.get("cert")
-        cert_url = event.params.get("cert-url")
-        projects = event.params.get("projects")
+        name: str = event.params.get("name", "unknown")
+        cert: str = event.params.get("cert", "")
+        cert_url: str = event.params.get("cert-url", "")
+        projects: str = event.params.get("projects", "")
 
         if not cert and not cert_url:
             msg = "One of cert or cert-url parameter needs to be provided."
@@ -157,13 +235,11 @@ class LxdCharm(CharmBase):
             # The received PEM needs to be mangled to be able to split()
             # on spaces without breaking the "-----BEGIN CERTIFICATE-----"
             # and "-----END CERTIFICATE-----" lines
-            cert = (
-                "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split())
-                .replace("CERTIFICATE", " CERTIFICATE", 2)
-                .encode()
+            cert = "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
+                "CERTIFICATE", " CERTIFICATE", 2
             )
             # Ignore the cert-url param if a cert was provided
-            cert_url = None
+            cert_url = ""
 
         if cert_url and not (cert_url.startswith("http://") or cert_url.startswith("https://")):
             msg = 'The cert-url parameter needs to start with "http://" or "https://".'
@@ -185,7 +261,7 @@ class LxdCharm(CharmBase):
                 logger.error(msg)
                 return
             else:
-                cert = response.read()
+                cert = response.read().decode()
 
         if not cert:
             msg = "Invalid/empty certificate provided/retrieved."
@@ -544,163 +620,161 @@ class LxdCharm(CharmBase):
         logger.debug(f"PKI files required to connect to OVN using SSL saved to {ovn_dir}")
 
         # If we were previously waiting on a certificates relation we should now unblock
-        if isinstance(self.unit.status, BlockedStatus) and "'certificates' missing" in str(
-            self.unit.status
+        if (
+            isinstance(self.unit.status, BlockedStatus)
+            and "'certificates' missing" in self.unit.status.message
         ):
             self.unit_active()
 
-    def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
-        """If not in cluster mode: do nothing.
+    def _leader_issue_join_token(self, event: RelationChangedEvent) -> None:
+        """Check if non-leader units are in need of join tokens."""
+        if not event.unit:
+            logger.debug("No available data yet")
+            return
 
-        * If we are a leader: update the prometheus-manual data and issue a join token.
-        * If we are a new unit: use the newly minted token to join the cluster.
+        if not self.is_peer_data_version_supported(event.unit):
+            logger.error(f"Incompatible/missing version found in {event.unit.name}")
+            return
+
+        hostname: str = self.get_peer_data_str(event.unit, "hostname")
+        if not hostname:
+            # Clear the app data bag of any consumed token associated with the remote unit
+            if self.pop_peer_data_str(self.app, event.unit.name):
+                logger.debug(f"Cleared consumed token for {event.unit.name}")
+            else:
+                logger.error(f"Missing hostname in {event.unit.name}")
+            return
+
+        if self.get_peer_data_str(self.app, event.unit.name):
+            logger.debug(f"{event.unit.name} ({hostname}) has not used its join token yet")
+            return
+
+        logger.debug(f"Cluster join token request received from {event.unit.name} for {hostname}")
+        token: str = self.lxd_cluster_add_token(hostname)
+        if not token:
+            logger.error(f"Unable to add a join token for hostname={hostname}")
+            return
+
+        # Remove the "description" from member_config to reduce the size of the data bag
+        member_config: List[Dict] = pylxd.Client().cluster.get().member_config
+        for c in member_config:
+            _ = c.pop("description", None)
+
+        # XXX: the members dict maintains an assiciation between the Juju unit name
+        #      and the LXD cluster member name (hostname/uname). This is needed when
+        #      removing cluster members when they depart from the relation.
+
+        # Update the members list in the app data bag with the hostname of the unit that is
+        # about to join the cluster
+        members: Dict = self.get_peer_data_dict(self.app, "members")
+        if not members:
+            # If there is no members list, we need to add ourself first
+            my_hostname = os.uname().nodename
+            logger.debug(f"Initializing the members list with {self.unit.name} ({my_hostname})")
+            members = {self.unit.name: my_hostname}
+
+        # Check for hostname colisions
+        for unit_name, unit_hostname in members.items():
+            if hostname == unit_hostname:
+                logger.error(f"Hostname colision with {unit_name} ({hostname})")
+                return
+
+        logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
+        members[event.unit.name] = hostname
+
+        # If we made it here, potential problems should have been handled already so it
+        # is time to share the information needed by the remote unit to join the cluster
+        self.set_peer_data_str(self.app, event.unit.name, token)
+        self.set_peer_data_list(self.app, "member_config", member_config)
+        self.set_peer_data_dict(self.app, "members", members)
+
+        logger.debug(f"Cluster joining information added for {event.unit.name}")
+
+    def _non_leader_join_cluster(self, event: RelationChangedEvent) -> None:
+        """Check if the leader issued a cluster join token for us."""
+        # Exit early if already clustered
+        if self._stored.lxd_clustered:
+            return
+
+        # Check versions of data bags before using them
+        for bag in (self.unit, self.app):
+            if not self.is_peer_data_version_supported(bag):
+                logger.error(f"Incompatible/missing version found in {bag.name}")
+                return
+
+        # As a non-leader not yet joined to a cluster, check the app data bag for
+        # our join token and the member_config
+        my_token: str = self.get_peer_data_str(self.app, self.unit.name)
+        if not my_token:
+            logger.error(f"Missing token for {self.unit.name} in {self.app.name}")
+            return
+
+        cluster_member_config: List[Dict] = self.get_peer_data_list(self.app, "member_config")
+        if not cluster_member_config:
+            logger.error(f"Missing member_config in {self.app.name}")
+            return
+
+        # Use the token and member_config to join the cluster
+        logger.debug(f"Cluster joining information found in {self.app.name}")
+        self.lxd_cluster_join(my_token, cluster_member_config)
+
+        # Remove our hostname from our unit data bag to signify
+        # we no longer need a join token to be emitted
+        _ = self.pop_peer_data_str(self.unit, "hostname")
+
+        logger.debug(f"The unit {self.unit.name} is now part of the cluster")
+
+    def _on_cluster_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Keep unit information up to date and cluster management.
+
+        All units need to keep their unit data bag up to date.
+
+        The leader unit needs to:
+        * Issue join tokens if mode=cluster
+
+        Non-leaders units need to:
+        * Join the cluster using their join token if mode=cluster
         """
-        # All units automatically get a cluster peer relation irrespective of the mode
-        # so do nothing if not in cluster mode
-        if self.config.get("mode") != "cluster":
+        # Keep the metrics_endpoint data up to date
+        self.lxd_update_prometheus_manual_scrape_job()
+
+        # Nothing left to do if mode != cluster
+        if self.config.get("mode", "") != "cluster":
             return
 
         if self.unit.is_leader():
-            if not event.unit:
-                logger.debug("No available data yet")
-                return
-
-            # The leader needs to look for join token to issue in the unit data bag
-            d = event.relation.data[event.unit]
-            version = d.get("version")
-
-            if not version:
-                logger.error(f"Missing version in {event.unit.name}")
-                return
-
-            if version != "1.0":
-                logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
-                return
-
-            hostname = d.get("hostname")
-            if not hostname:
-                # Clear the app data bag of any consumed token associated with the remote unit
-                if event.relation.data[self.app].pop(event.unit.name, None):
-                    logger.debug(f"Cleared consumed token for {event.unit.name}")
-                else:
-                    logger.error(f"Missing hostname in {event.unit.name}")
-                return
-
-            logger.debug(f"Cluster join token request received from {event.unit.name}")
-
-            token = self.lxd_cluster_add_token(hostname)
-            if not token:
-                logger.error(f"Unable to add a join token for hostname={hostname}")
-                return
-
-            member_config = pylxd.Client().cluster.get().member_config
-
-            # Strip the "description" and convert to compact JSON string
-            for c in member_config:
-                _ = c.pop("description", None)
-            member_config = json.dumps(member_config, separators=(",", ":"))
-
-            # Update the members list in the app data bag with the hostname of the unit that is
-            # about to join the cluster
-            members = event.relation.data[self.app].get("members")
-            if members:
-                members = json.loads(members)
-            else:
-                # If there is no members list, it means we need to add ourself first
-                # and then the newly joined member
-                my_hostname = os.uname().nodename
-                logger.debug(
-                    f"Initializing the members list with {self.unit.name} ({my_hostname})"
-                )
-                members = {self.unit.name: my_hostname}
-
-            logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
-            members[event.unit.name] = hostname
-
-            # Convert the members list to a compact JSON string
-            members = json.dumps(members, separators=(",", ":"))
-
-            event.relation.data[self.app].update(
-                {
-                    "version": "1.0",
-                    event.unit.name: token,
-                    "member_config": member_config,
-                    "members": members,
-                }
-            )
-            logger.debug(f"Cluster joining information added for {event.unit.name}")
-        elif not self._stored.lxd_clustered:  # Exit early if already clustered
-
-            # As a non leader, check if we received a token in the app data bag
-            d = event.relation.data[self.app]
-            version = d.get("version")
-
-            if not version:
-                logger.error(f"Missing version in {self.app.name}")
-                return
-
-            if version != "1.0":
-                logger.error(f"Incompatible version ({version}) found in {self.app.name}")
-                return
-
-            token = d.get(self.unit.name)
-            if not token:
-                logger.error(f"Missing token for {self.unit.name} in {self.app.name}")
-                return
-
-            member_config = d.get("member_config")
-            if not member_config:
-                logger.error(f"Missing member_config in {self.app.name}")
-                return
-
-            # Hand over the token and member_config
-            logger.debug(f"Cluster joining information found in {self.app.name}")
-            self.lxd_cluster_join(token, member_config)
-
-            # Remove our hostname from our unit data bag to signify
-            # we no longer need a join token to be emitted
-            _ = event.relation.data[self.unit].pop("hostname", None)
-
-            logger.debug(f"The unit {self.unit.name} is now part of the cluster")
+            self._leader_issue_join_token(event)
+        else:
+            self._non_leader_join_cluster(event)
 
     def _on_cluster_relation_created(self, event: RelationCreatedEvent) -> None:
-        """If not in cluster mode: do nothing.
+        """Populate the cluster unit data bag with information to communicate to our peers.
 
-        Add our hostname to the unit data bag which will be used to issue a join token later on.
+        If mode=cluster, non-leader add their hostname to the unit data bag to signal the
+        leader that they need a join token issued for them.
         """
-        # All units automatically get a cluster peer relation irrespective of the mode
-        # so do nothing if not in cluster mode
-        if self.config.get("mode") != "cluster":
+        # Advertise our supported version
+        self.set_peer_data_str(self.unit, "version", "1.0")
+
+        # Advertise the supported version in the app data bag
+        if self.unit.is_leader():
+            self.set_peer_data_str(self.app, "version", "1.0")
+
+        # Nothing left to do if mode != cluster
+        if self.config.get("mode", "") != "cluster":
             return
 
-        # Save our metrics endpoint address for later reuse
-        metrics_endpoint = self.lxd_get_metrics_endpoint()
-        event.relation.data[self.unit].update(
-            {
-                "metrics_endpoint": metrics_endpoint,
-            }
-        )
-        logger.debug(f"Saved metrics endpoint ({metrics_endpoint}) to {self.unit.name}")
-
-        # The leader will be the one creating the cluster so no join token needed
+        # The leader does not need to request a join token
         if self.unit.is_leader():
-            logger.debug("Not requesting cluster join token (we are leader)")
             return
 
         # Request a join token by adding our hostname to the unit data bag
-        event.relation.data[self.unit].update(
-            {
-                "version": "1.0",
-                "hostname": os.uname().nodename,
-            }
-        )
-        logger.debug("Cluster join token requested")
+        hostname: str = os.uname().nodename
+        self.set_peer_data_str(self.unit, "hostname", hostname)
+        self.unit_maintenance(f"Cluster join token requested ({hostname})")
 
     def _on_cluster_relation_departed(self, event: RelationDepartedEvent) -> None:
-        # All units automatically get a cluster peer relation irrespective of the mode
-        if self.config.get("mode") != "cluster":
-            return
-
+        """Handle cluster members going away. Nothing to do if not clustered."""
         # If we never joined, no point in departing
         if not self._stored.lxd_clustered:
             return
@@ -709,36 +783,31 @@ class LxdCharm(CharmBase):
         if not self.unit.is_leader():
             return
 
+        if not self.is_peer_data_version_supported(self.app):
+            logger.error(f"Incompatible/missing version found in {self.app.name}")
+            return
+
         # Load the list of cluster members
-        members = event.relation.data[self.app].get("members")
+        members: Dict = self.get_peer_data_dict(self.app, "members")
         if not members:
             logger.error(f"Unable to get the cluster members list from {self.app.name}")
             return
 
-        members = json.loads(members)
-
         # Lookup the hostname of the unit that left
-        hostname = members.pop(event.unit.name, None)
+        hostname: str = members.pop(event.unit.name, "")
         if not hostname:
             logger.error(
                 f"Unable to find the hostname of {event.unit.name}, not removing from the cluster"
             )
             return
-        else:
-            logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
 
         # Remove it from the cluster
+        logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
         self.lxd_cluster_remove(hostname)
 
         # Save the updated cluster members list
-        members = json.dumps(members, separators=(",", ":"))
-        event.relation.data[self.app].update(
-            {
-                "members": members,
-            }
-        )
-
-        logger.debug(f"The unit {event.unit.name} is no longer part of the cluster")
+        self.set_peer_data_dict(self.app, "members", members)
+        logger.info(f"The unit {event.unit.name} is no longer part of the cluster")
 
     def _on_grafana_dashboard_relation_changed(self, event: RelationChangedEvent) -> None:
         """Provide the LXD dashboard to Grafana."""
@@ -832,8 +901,31 @@ class LxdCharm(CharmBase):
         )
         logger.debug("LXD dashboard sent to Grafana")
 
+    def _on_https_relation_broken(self, event: RelationBrokenEvent) -> None:
+        """Remove the client certificate of the departed app.
+
+        Look through all the certificate to see if one matches the name of
+        the departed app.
+
+        Certificates tied to apps are shared among units so they should be removed
+        only when the relation is broken indicating all remote units are gone.
+
+        If clustered, only the leader unit needs to take action.
+        """
+        # In cluster mode, only the leader needs to handle the trust removal
+        if self.config.get("mode", "") == "cluster":
+            if not self.unit.is_leader() or not self._stored.lxd_clustered:
+                return
+
+        fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.app.name}")
+        if fingerprint:
+            self.lxd_trust_remove(fingerprint)
+
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
-        """Add the received client certificate to the trusted list."""
+        """Add the received client certificate to the trusted list.
+
+        If clustered, only the leader unit needs to take action.
+        """
         # Relation cannot be rejected so notify the operator if it won't
         # be usable and don't touch the remote unit data bag at all
         if not self._stored.config["lxd-listen-https"]:
@@ -844,51 +936,57 @@ class LxdCharm(CharmBase):
             return
 
         # In cluster mode, only the leader needs to handle the received cert
-        if self._stored.lxd_clustered and not self.unit.is_leader():
+        if self.config.get("mode", "") == "cluster":
+            if not self.unit.is_leader():
+                return
+
+            # Unable to accept certificate because our cluster isn't bootstrapped yet
+            if not self._stored.lxd_clustered:
+                logger.debug("Cluster not bootstrapped, deferring")
+                event.defer()
+                return
+
+        # If the remote side is clustered, it will use the app bag
+        # if not clustered, the unit bag will be used
+        d: Dict = {}
+        for bag in (event.app, event.unit):
+            if not bag:
+                continue
+
+            d = event.relation.data[bag]
+            if d.get("version", "") == "1.0":
+                logger.debug(f"Valid version found in {bag.name}")
+                break
+            else:
+                logger.error(f"Incompatible/missing version found in {bag.name}")
+
+        if not d or not bag:
+            logger.error("No compatible version found in any data bags")
             return
 
-        d = event.relation.data[event.unit]
-        version = d.get("version")
-
-        if not version:
-            logger.error(f"Missing version in {event.unit.name}")
-            return
-
-        if version != "1.0":
-            logger.error(f"Incompatible version ({version}) found in {event.unit.name}")
-            return
-
-        cert = d.get("certificate")
+        cert = d.get("certificate", "")
         if not cert:
-            logger.error(f"Missing certificate in {event.unit.name}")
+            logger.error(f"Missing certificate in {bag.name}")
             return
+
+        projects = d.get("projects", "")
+
+        # Only add the cert if not already trusted
+        cert_name = f"juju-relation-{bag.name}"
+        if not self.lxd_trust_fingerprint(cert_name):
+            if self.lxd_trust_add(cert=cert, name=cert_name, projects=projects):
+                msg = "The client certificate is now trusted"
+                if projects:
+                    msg += f" for the following project(s): {projects}"
+                logger.info(msg)
+            else:
+                msg = "Failed to add the certificate to the trusted list"
+                if projects:
+                    msg += f" for the following project(s): {projects}"
+                logger.error(msg)
+                return
         else:
-            cert = cert.encode()
-
-        # Convert from string to bool
-        autoremove = d.get("autoremove", False)
-        autoremove = autoremove in ("True", "true")
-
-        projects = d.get("projects")
-
-        name = f"juju-relation-{event.unit.name}"
-
-        # Unconditionally remove the cert (ignoring the :autoremove suffix) prior to adding it
-        self.lxd_trust_remove(name, opportunistic=True)
-        if autoremove:
-            name += ":autoremove"
-
-        if self.lxd_trust_add(cert=cert, name=name, projects=projects):
-            msg = "The client certificate is now trusted"
-            if projects:
-                msg += f" for the following project(s): {projects}"
-            logger.info(msg)
-        else:
-            msg = "Failed to add the certificate to the trusted list"
-            if projects:
-                msg += f" for the following project(s): {projects}"
-            logger.error(msg)
-            return
+            logger.debug(f"The client certificate ({cert_name=}) was already trusted")
 
         host_env = pylxd.Client().host_info["environment"]
         d = {
@@ -903,10 +1001,27 @@ class LxdCharm(CharmBase):
         # otherwise put it in the unit data bag
         if self._stored.lxd_clustered:
             event.relation.data[self.app].update(d)
-            logger.debug(f"Connection information put in {self.app.name}")
+            logger.debug(f"Connection information put in {self.app.name} app data")
         else:
             event.relation.data[self.unit].update(d)
-            logger.debug(f"Connection information put in {self.unit.name}")
+            logger.debug(f"Connection information put in {self.unit.name} unit data")
+
+    def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
+        """Remove the client certificate of the departed unit.
+
+        Look through all the certificate to see if one matches the name of
+        the departed unit.
+
+        If clustered, only the leader unit needs to take action.
+        """
+        # In cluster mode, only the leader needs to handle the trust removal
+        if self.config.get("mode", "") == "cluster":
+            if not self.unit.is_leader() or not self._stored.lxd_clustered:
+                return
+
+        fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.unit.name}")
+        if fingerprint:
+            self.lxd_trust_remove(fingerprint)
 
     def _on_loki_push_api_endpoint_joined(self, event: RelationJoinedEvent):
         """Configure LXD to send logs to Loki."""
@@ -955,15 +1070,6 @@ class LxdCharm(CharmBase):
         except pylxd.exceptions.LXDAPIException as e:
             logger.error(f"Failed to set loki.api.url: {e}")
             return
-
-    def _on_https_relation_departed(self, event: RelationDepartedEvent) -> None:
-        """Remove the client certificate of the departed unit.
-
-        Look through all the certificate to see if one matches the name of
-        the departed unit and with the ":autoremove" suffix.
-        """
-        to_delete = f"juju-relation-{event.unit.name}:autoremove"
-        self.lxd_trust_remove(name=to_delete)
 
     def _on_ovsdb_cms_relation_changed(self, event: RelationChangedEvent) -> None:
         """Assemble a DB connection string to connect to OVN."""
@@ -1054,7 +1160,7 @@ class LxdCharm(CharmBase):
             return
 
         if event.unit:
-            remote_unit_name = f"{event.unit.name}-metrics:autoremove".replace("/", "_")
+            remote_unit_name = f"{event.unit.name}-metrics".replace("/", "_")
         else:
             remote_unit_name = ""
         self.lxd_update_prometheus_manual_scrape_job(remote_unit_name)
@@ -1072,8 +1178,11 @@ class LxdCharm(CharmBase):
             )
             return
 
-        to_delete = f"{event.unit.name}-metrics:autoremove".replace("/", "_")
-        self.lxd_trust_remove(name=to_delete)
+        fingerprint: str = self.lxd_trust_fingerprint(
+            f"{event.unit.name}-metrics".replace("/", "_")
+        )
+        if fingerprint:
+            self.lxd_trust_remove(fingerprint)
 
     def config_changed(self) -> dict:
         """Figure out what changed."""
@@ -1101,7 +1210,7 @@ class LxdCharm(CharmBase):
         if (
             not config_changed
             and isinstance(self.unit.status, BlockedStatus)
-            and "Can't modify lxd- keys after initialization:" in str(self.unit.status)
+            and "Can't modify lxd- keys after initialization:" in self.unit.status.message
         ):
             self.unit_active("Unblocking as the lxd- keys were reset to their initial values")
 
@@ -1119,7 +1228,7 @@ class LxdCharm(CharmBase):
                 return False
 
         # lxd-preseed can only be set when mode=standalone
-        if self.config.get("lxd-preseed") and self.config.get("mode") != "standalone":
+        if self.config.get("lxd-preseed", "") and self.config.get("mode", "") != "standalone":
             self.unit_blocked("Can't provide lxd-preseed when mode != standalone")
             return False
 
@@ -1154,9 +1263,9 @@ class LxdCharm(CharmBase):
             logger.debug("No proxy config from Juju.")
             return
 
-        http_proxy = None
-        https_proxy = None
-        no_proxy = None
+        http_proxy = ""
+        https_proxy = ""
+        no_proxy = ""
 
         with open(juju_proxy, encoding="UTF-8") as f:
             for line in f:
@@ -1297,14 +1406,13 @@ class LxdCharm(CharmBase):
 
         return token
 
-    def lxd_cluster_join(self, token: str, member_config: str) -> None:
+    def lxd_cluster_join(self, token: str, member_config: List[Dict]) -> None:
         """Join an existing cluster."""
         logger.debug("Joining cluster")
-        conf = json.loads(member_config)
 
         # If a local storage device was provided, it needs to be added in the storage-pool
         if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
-            for m in conf:
+            for m in member_config:
                 if m.get("entity") == "storage-pool" and m.get("key") == "source":
                     dev = str(self.model.storages["local"][0].location)
                     m["value"] = dev
@@ -1322,7 +1430,7 @@ class LxdCharm(CharmBase):
             "projects": [],
             "cluster": {
                 "enabled": True,
-                "member_config": conf,
+                "member_config": member_config,
                 "server_address": cluster_address,
                 "cluster_token": token,
             },
@@ -1364,9 +1472,12 @@ class LxdCharm(CharmBase):
         proceed with the removal.
         """
         client = pylxd.Client()
-        if not client.cluster.enabled:
-            logger.debug(f"Clustering not enabled for {member}")
-            return
+        try:
+            if not client.cluster.enabled:
+                logger.debug(f"Clustering not enabled for {member}")
+                return
+        except AttributeError:
+            logger.debug("pylxd is too old, the cluster.enabled attribute is missing")
 
         try:
             m = client.cluster.members.get(member)
@@ -1447,7 +1558,7 @@ class LxdCharm(CharmBase):
 
     def lxd_get_prometheus_targets(self) -> List[str]:
         """Return a list of targets to be scraped by Prometheus."""
-        if self.config.get("mode") != "cluster":
+        if self.config.get("mode", "") != "cluster":
             # The unit's metrics_endpoint is the only target for the scape_job
             return [self.lxd_get_metrics_endpoint()]
 
@@ -1539,7 +1650,7 @@ class LxdCharm(CharmBase):
 
             if client_cert:
                 self.lxd_trust_add(
-                    cert=client_cert.encode(),
+                    cert=client_cert,
                     name=remote_unit_name,
                     projects="",
                     metrics=True,
@@ -1589,10 +1700,10 @@ class LxdCharm(CharmBase):
 
     def lxd_init(self) -> None:
         """Apply initial configuration of LXD."""
-        mode = self.config.get("mode")
+        mode: str = self.config.get("mode", "")
         self.unit_maintenance(f"Initializing LXD in {mode} mode")
 
-        preseed = self.config.get("lxd-preseed")
+        preseed: str = self.config.get("lxd-preseed", "")
 
         if preseed:
             assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
@@ -1671,6 +1782,7 @@ class LxdCharm(CharmBase):
 
                 # Configure the network
                 if network_dev:
+                    network_config: Dict = {}
                     if network_dev == "lxdfan0":  # try to find a valid subnet to use for FAN
                         try:
                             fan_address = self.juju_space_get_address("fan", require_ipv4=True)
@@ -1684,9 +1796,7 @@ class LxdCharm(CharmBase):
                             msg = "Can't find a valid subnet for FAN, falling back to lxdbr0"
                             self.unit_maintenance(msg)
                             network_dev = "lxdbr0"
-                            network_config = None
-                    else:
-                        network_config = None
+                            network_config = {}
 
                     self.unit_maintenance(f"Configuring network bridge ({network_dev})")
                     client.networks.create(network_dev, config=network_config)
@@ -1794,14 +1904,7 @@ class LxdCharm(CharmBase):
 
         Also save the boolean toggle to enable/disable the listener.
         """
-        # default ports
-        ports = {
-            "bgp": 179,
-            "dns": 53,
-            "https": 8443,
-            "metrics": 9100,
-        }
-        if not ports.get(listener):
+        if listener not in self.ports:
             logger.error(f"Invalid listener ({listener}) provided")
             return False
 
@@ -1844,7 +1947,7 @@ class LxdCharm(CharmBase):
             cmd = ["open-port"]
         else:
             cmd = ["close-port"]
-        cmd += [str(ports[listener]), "--endpoints", listener]
+        cmd += [str(self.ports[listener]), "--endpoints", listener]
         logger.debug(f"Calling {cmd}")
 
         try:
@@ -1868,10 +1971,10 @@ class LxdCharm(CharmBase):
     ) -> bool:
         """Add a client certificate to the trusted list."""
         msg = f"Adding {name}'s certificate to the trusted list"
-        config: Dict[str, Union[str, List[str], bool]] = {
+        config: Dict[str, Union[str, bytes, List[str], bool]] = {
             "name": name,
             "password": "",
-            "cert_data": cert,
+            "cert_data": cert.encode(),
         }
 
         if projects:
@@ -1888,50 +1991,41 @@ class LxdCharm(CharmBase):
         client = pylxd.Client()
         try:
             client.certificates.create(**config)
+        except pylxd.exceptions.Conflict:
+            logger.debug(f"Certificate for {name} already trusted")
         except pylxd.exceptions.LXDAPIException as e:
             logger.error(f"Failed to add certificated: {e}")
             return False
 
         return True
 
-    def lxd_trust_remove(
+    def lxd_trust_fingerprint(
         self,
-        name: str = "",
-        fingerprint: str = "",
-        opportunistic: bool = False,
-    ) -> bool:
-        """Remove a client certificate from the trusted list."""
-        if not name and not fingerprint:
-            logger.error("No name nor fingerprint provided, not removing any certificate")
-            return False
+        name: str,
+    ) -> str:
+        """Return the fingerprint of the client certificate with the provided name, if trusted.
 
+        Return an empty str otherwise.
+        """
         client = pylxd.Client()
+        for c in client.certificates.all():
+            if c.name == name:
+                fingerprint: str = c.fingerprint
+                logger.debug(f"The certificate named {name} has the fingerprint: {fingerprint}")
+                return fingerprint
+        return ""
 
-        # If no fingerprint was provided, enumerate all certs looking for one with a matching
-        # name with or without a ":autoremove" suffix
-        if not fingerprint:
-            possible_names = (name, f"{name}:autoremove")
-            for c in client.certificates.all():
-                if c.name in possible_names:
-                    fingerprint = c.fingerprint
-                    logger.debug(
-                        f"The certificate named {c.name} has the fingerprint: {fingerprint}"
-                    )
-                    break
-
-        if not fingerprint:
-            if not opportunistic:
-                logger.error(f"No certificate found with the name {name}")
-            return False
-
+    def lxd_trust_remove(self, fingerprint: str) -> bool:
+        """Remove a client certificate from the trusted list using its fingerprint."""
+        client = pylxd.Client()
         try:
             c = client.certificates.get(fingerprint)
             logger.info(f"Removing {c.name}'s certificate ({fingerprint}) from the trusted list")
             c.delete()
-            return True
         except pylxd.exceptions.NotFound:
             logger.error(f"No certificate with fingerprint {fingerprint} found")
             return False
+        return True
 
     def lxd_trust_token(self, name: str, projects: str = "") -> str:
         """Get a client certificate add token."""
@@ -1959,22 +2053,21 @@ class LxdCharm(CharmBase):
     def resource_sideload(self) -> None:
         """Sideload resources."""
         # Multi-arch support
-        arch = os.uname().machine
+        arch: str = os.uname().machine
+        possible_archs: List[str] = [arch]
         if arch == "x86_64":
             possible_archs = ["x86_64", "amd64"]
-        else:
-            possible_archs = [arch]
 
         # LXD snap
-        lxd_snap_resource = None
-        fname_suffix = ".snap"
+        lxd_snap_resource: str = ""
+        fname_suffix: str = ".snap"
         try:
             # Note: self._stored can only store simple data types (int/float/dict/list/etc)
             lxd_snap_resource = str(self.model.resources.fetch("lxd-snap"))
         except ModelError:
             pass
 
-        tmp_dir = None
+        tmp_dir = ""
         if lxd_snap_resource and tarfile.is_tarfile(lxd_snap_resource):
             logger.debug(f"{lxd_snap_resource} is a tarball; unpacking")
             tmp_dir = tempfile.mkdtemp()
@@ -1987,6 +2080,7 @@ class LxdCharm(CharmBase):
                 break
             else:
                 logger.debug("Missing arch specific snap from tarball.")
+            tarball.close()
         else:
             self._stored.lxd_snap_path = lxd_snap_resource
 
@@ -1997,7 +2091,7 @@ class LxdCharm(CharmBase):
                 os.rmdir(tmp_dir)
 
         # LXD binary
-        lxd_binary_resource = None
+        lxd_binary_resource: str = ""
         fname_suffix = ""
         try:
             # Note: self._stored can only store simple data types (int/float/dict/list/etc)
@@ -2005,7 +2099,7 @@ class LxdCharm(CharmBase):
         except ModelError:
             pass
 
-        tmp_dir = None
+        tmp_dir = ""
         if lxd_binary_resource and tarfile.is_tarfile(lxd_binary_resource):
             logger.debug(f"{lxd_binary_resource} is a tarball; unpacking")
             tmp_dir = tempfile.mkdtemp()
@@ -2018,6 +2112,7 @@ class LxdCharm(CharmBase):
                 break
             else:
                 logger.debug("Missing arch specific binary from tarball.")
+            tarball.close()
         else:
             self._stored.lxd_binary_path = lxd_binary_resource
 
@@ -2145,8 +2240,8 @@ class LxdCharm(CharmBase):
             logger.debug("Reverting to LXD snap from snapstore")
             channel = self._stored.config["snap-channel"]
             cmd = ["snap", "refresh", "lxd", f"--channel={channel}", "--amend"]
-            alias = None
-            enable = None
+            alias = []
+            enable = []
         else:
             logger.debug("Sideloading LXD snap")
             cmd = ["snap", "install", "--dangerous", self._stored.lxd_snap_path]

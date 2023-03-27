@@ -68,9 +68,11 @@ jobs:
           }
           trap debug err exit
 
+          juju model-config logging-config="<root>=WARNING;unit=DEBUG"
+
           # Test 20.04 charm in standalone mode
           juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config lxd-listen-https=true
-          juju deploy ./https-client_ubuntu-22.04-amd64.charm --config autoremove=false
+          juju deploy ./https-client_ubuntu-22.04-amd64.charm
           juju relate https-client lxd
           juju wait
           juju status --relations
@@ -78,16 +80,28 @@ jobs:
           # confirm lxd now trusts the client cert
           juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
 
-          # toggle the autoremove config and check if lxd's side is updated
-          juju config https-client autoremove=true
+          # break the relationship to have the client cert removed
+          juju remove-relation https-client lxd
           juju wait
-          juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+:autoremove,"
+
+          # check that the client cert was not left behind
+          ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
+
+          # set the projects config and re-establish the relation
+          juju config https-client projects="default"
+          juju relate https-client lxd
+          juju wait
+
+          # check that the client cert is now restricted
+          FINGERPRINT="$(juju run --unit lxd/leader -- lxc config trust list --format csv | awk -F, '/,juju-relation-https-client/ {print $4}')"
+          juju run --unit lxd/leader -- lxc config trust show "$FINGERPRINT"
+          juju run --unit lxd/leader -- lxc config trust show "$FINGERPRINT" | grep -xF 'restricted: true'
 
           # removing the https-client application will break the
           # relation causing the removal of the cert
           juju remove-application https-client
           juju wait
-          ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+:autoremove,"
+          ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
           juju status --relations
 
     - name: Test opening/closing ports

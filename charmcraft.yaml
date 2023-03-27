@@ -8,14 +8,14 @@ bases:
 parts:
   charm:
     build-packages:
+      - ca-certificates
       - cargo
       - git
       - libffi-dev
       - libssl-dev
+      - pkg-config
       - python3-dev
       - rustc
-    charm-python-packages:
-      - setuptools < 58
   grafana-dashboard:
     plugin: dump
     source: .

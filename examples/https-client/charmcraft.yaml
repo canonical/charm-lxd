@@ -10,7 +10,6 @@ parts:
       - git
       - libffi-dev
       - libssl-dev
+      - pkg-config
       - rustc
     charm-entrypoint: src/https-client.py
-    charm-python-packages:
-      - setuptools < 58

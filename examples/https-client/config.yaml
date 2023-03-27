@@ -1,10 +1,4 @@
 options:
-  autoremove:
-    default: true
-    description: |
-      Wether to autoremove the certificate from LXD's
-      trusted list when the relation is broken.
-    type: boolean
   projects:
     description: |
       Comma separated list of projects to give access to.
