@@ -57,6 +57,8 @@ provides:
     interface: lxd-metrics
   prometheus-manual:
     interface: prometheus-manual
+  metrics-endpoint:
+    interface: prometheus_scrape
 requires:
   ceph:
     interface: ceph-client
