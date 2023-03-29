@@ -1938,10 +1938,6 @@ class LxdCharm(CharmBase):
             logger.error(f"Failed to set listener: {e}")
             return False
 
-        # Save the addr instead of the socket because it makes it easier
-        # to compare with the IP returned by get_binding()
-        self._stored.addresses[listener] = addr
-
         # open/close-port
         if addr:
             cmd = ["open-port"]
@@ -1963,6 +1959,10 @@ class LxdCharm(CharmBase):
         except subprocess.TimeoutExpired as e:
             logger.error(f'Timeout exceeded while running "{e.cmd}"')
             return False
+
+        # Save the addr instead of the socket because it makes it easier
+        # to compare with the IP returned by get_binding()
+        self._stored.addresses[listener] = addr
 
         return True
 
