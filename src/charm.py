@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Reduce verbosity of API calls made by pylxd
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-SYSCTL_CONFIGS = {
+SYSCTL_CONFIGS: Dict[str, int] = {
     "fs.aio-max-nr": 524288,
     "fs.inotify.max_queued_events": 1048576,
     "fs.inotify.max_user_instances": 1048576,
@@ -54,12 +54,12 @@ SYSCTL_CONFIGS = {
     "vm.max_map_count": 262144,
 }
 
-SYSTEMD_TMPFILES_CONFIGS = [
+SYSTEMD_TMPFILES_CONFIGS: List[str] = [
     "z /proc/sched_debug 0400 - - -",
     "z /sys/kernel/slab  0700 - - -",
 ]
 
-REBOOT_REQUIRED_FILE = "/run/lxd-reboot-required"
+REBOOT_REQUIRED_FILE: str = "/run/lxd-reboot-required"
 
 
 class LxdCharm(CharmBase):
@@ -1096,10 +1096,10 @@ class LxdCharm(CharmBase):
             return
 
         # Get the list of ovn-central hosts' IPs
-        hosts = []
+        hosts: List[str] = []
         for unit in event.relation.units:
             unit_data = event.relation.data[unit]
-            host = unit_data.get("bound-address")
+            host: str = unit_data.get("bound-address", "")
             if host:
                 host = host.replace('"', "", 2)
                 if ":" in host:
@@ -1115,7 +1115,7 @@ class LxdCharm(CharmBase):
             logger.error(f"No ovn-central IP found in {event.app.name} relation data")
             return
 
-        db = ",".join(sorted(hosts))
+        db: str = ",".join(sorted(hosts))
 
         # Configuring LXD to connect to ovn-central DB
         try:
@@ -1130,7 +1130,7 @@ class LxdCharm(CharmBase):
         logger.info(f"LXD is now connected to ovn-central DB (NB connection={db})")
 
         # Let OVN know which IP will be used to connect to it
-        bound_address = self.juju_space_get_address("ovsdb-cms")
+        bound_address: str = self.juju_space_get_address("ovsdb-cms")
         if not bound_address:
             logger.error("Unable to find the address bounded to ovsdb-cms space")
             return
@@ -1159,10 +1159,9 @@ class LxdCharm(CharmBase):
             )
             return
 
+        remote_unit_name: str = ""
         if event.unit:
             remote_unit_name = f"{event.unit.name}-metrics".replace("/", "_")
-        else:
-            remote_unit_name = ""
         self.lxd_update_prometheus_manual_scrape_job(remote_unit_name)
 
     def _on_prometheus_manual_relation_departed(self, event: RelationDepartedEvent) -> None:
@@ -1498,7 +1497,7 @@ class LxdCharm(CharmBase):
             logger.error('The name cannot contain a "/".')
             return ("", "")
 
-        cmd = [
+        cmd: List[str] = [
             "openssl",
             "req",
             "-x509",
@@ -1535,9 +1534,9 @@ class LxdCharm(CharmBase):
         # The key data was output to stdout and never touched the disk
         # but the certificate data needs to be read from the file that
         # can then be discarded
-        key = c.stdout
+        key: str = c.stdout
         with open("certificate.crt") as f:
-            cert = f.read()
+            cert: str = f.read()
         os.remove("certificate.crt")
 
         return (cert, key)
@@ -1548,7 +1547,7 @@ class LxdCharm(CharmBase):
         First check if there is a dedicated metrics endpoint and fallback to the generic https
         listener where metrics are also available.
         """
-        addr = self.juju_space_get_address("metrics") or self.juju_space_get_address("https")
+        addr: str = self.juju_space_get_address("metrics") or self.juju_space_get_address("https")
         if not addr:
             return ""
 
@@ -1909,13 +1908,13 @@ class LxdCharm(CharmBase):
             return False
 
         # Some listeners require a special API extension
-        api_extensions = {
+        api_extensions: Dict[str, str] = {
             "bgp": "network_bgp",
             "dns": "network_dns",
             "metrics": "metrics",
         }
 
-        required_api = api_extensions.get(listener)
+        required_api: str = api_extensions.get(listener, "")
 
         client = pylxd.Client()
         if required_api and not client.has_api_extension(required_api):
@@ -1939,10 +1938,9 @@ class LxdCharm(CharmBase):
             return False
 
         # open/close-port
+        cmd: List[str] = ["close-port"]
         if addr:
             cmd = ["open-port"]
-        else:
-            cmd = ["close-port"]
         cmd += [str(self.ports[listener]), "--endpoints", listener]
         logger.debug(f"Calling {cmd}")
 
@@ -1970,7 +1968,7 @@ class LxdCharm(CharmBase):
         self, cert: str, name: str, projects: str = "", metrics: bool = False
     ) -> bool:
         """Add a client certificate to the trusted list."""
-        msg = f"Adding {name}'s certificate to the trusted list"
+        msg: str = f"Adding {name}'s certificate to the trusted list"
         config: Dict[str, Union[str, bytes, List[str], bool]] = {
             "name": name,
             "password": "",
@@ -2029,7 +2027,7 @@ class LxdCharm(CharmBase):
 
     def lxd_trust_token(self, name: str, projects: str = "") -> str:
         """Get a client certificate add token."""
-        msg = f"Requesting a client certificate add token for {name}"
+        msg: str = f"Requesting a client certificate add token for {name}"
         config: Dict[str, Union[str, List[str], bool]] = {
             "name": name,
         }
@@ -2067,7 +2065,7 @@ class LxdCharm(CharmBase):
         except ModelError:
             pass
 
-        tmp_dir = ""
+        tmp_dir: str = ""
         if lxd_snap_resource and tarfile.is_tarfile(lxd_snap_resource):
             logger.debug(f"{lxd_snap_resource} is a tarball; unpacking")
             tmp_dir = tempfile.mkdtemp()
@@ -2133,8 +2131,8 @@ class LxdCharm(CharmBase):
             return
 
         # Apply the changes
-        snap_set_list = []
-        reboot_needed = False
+        snap_set_list: List[str] = []
+        reboot_needed: bool = False
         for k, v in snap_set.items():
             # Convert Juju config to "snap set" syntax
             if v is None:
@@ -2193,16 +2191,15 @@ class LxdCharm(CharmBase):
 
         # During the install phase, there won't be anything in self._stored.config
         # so fallback to the live configuration
-        mode = self._stored.config.get("mode")
+        mode: str = self._stored.config.get("mode", "")
         if not mode:
             mode = self.config["mode"]
 
         # Cluster members all need to get the same snap version so set a cohort
+        cohort: List[str] = []
         if mode == "cluster":
             logger.debug("Using snap cohort due to mode=cluster")
             cohort = ["--cohort=+"]
-        else:
-            cohort = []
 
         try:
             subprocess.run(
@@ -2235,13 +2232,15 @@ class LxdCharm(CharmBase):
         """Sideload LXD snap resource."""
         logger.debug("Applying LXD snap sideload changes")
 
+        cmd: List[str] = []
+        alias: List[str] = []
+        enable: List[str] = []
+
         # A 0 byte file will unload the resource
         if os.path.getsize(self._stored.lxd_snap_path) == 0:
             logger.debug("Reverting to LXD snap from snapstore")
-            channel = self._stored.config["snap-channel"]
+            channel: str = self._stored.config["snap-channel"]
             cmd = ["snap", "refresh", "lxd", f"--channel={channel}", "--amend"]
-            alias = []
-            enable = []
         else:
             logger.debug("Sideloading LXD snap")
             cmd = ["snap", "install", "--dangerous", self._stored.lxd_snap_path]
@@ -2266,7 +2265,7 @@ class LxdCharm(CharmBase):
     def snap_sideload_lxd_binary(self) -> None:
         """Sideload LXD binary resource."""
         logger.debug("Applying LXD binary sideload changes")
-        lxd_debug = "/var/snap/lxd/common/lxd.debug"
+        lxd_debug: str = "/var/snap/lxd/common/lxd.debug"
 
         # A 0 byte file will unload the resource
         if os.path.getsize(self._stored.lxd_binary_path) == 0:
