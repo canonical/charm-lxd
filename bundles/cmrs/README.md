@@ -86,3 +86,22 @@ Establishing the `lxd` to `ceph-mon` relation in the wrong order will have the `
 state with the error message `Unsupported CMR relation`.
 
 Solution: use the steps outline above as they are known to work.
+
+## LXD and COS Lite
+
+The COS Lite stack should be deployed as [documented upstream](https://charmhub.io/cos-lite). Let's assume the COS Lite model
+is named `cos`. Here is what needs to be done to have LXD integrated with the COS Lite stack:
+
+```shell
+# assumes Juju 3.0+
+
+# expose some interfaces
+juju offer cos.grafana:grafana-dashboard
+juju offer cos.loki:logging
+juju offer cos.prometheus:metrics-endpoint
+
+# integrate/relate LXD with COS Lite services
+juju integrate lxd admin/cos.grafana
+juju integrate lxd admin/cos.loki
+juju integrate lxd admin/cos.prometheus
+```
