@@ -4,6 +4,16 @@ options:
     default: true
     description: Restrict access to sensitive files/dirs (/proc/sched_debug, /sys/kernel/slab)
 
+  lxd-init-network:
+    type: boolean
+    default: true
+    description: Enable/disable the initialization of the default network
+
+  lxd-init-storage:
+    type: boolean
+    default: true
+    description: Enable/disable the initialization of the default storage pool
+
   lxd-listen-bgp:
     type: boolean
     default: false

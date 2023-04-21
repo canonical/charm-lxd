@@ -1884,6 +1884,10 @@ class LxdCharm(CharmBase):
 
         preseed: str = self.config.get("lxd-preseed", "")
 
+        # network and storage pool creation can be disabled by the config
+        init_storage: bool = self.config["lxd-init-storage"]
+        init_network: bool = self.config["lxd-init-network"]
+
         if preseed:
             assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
 
@@ -1907,6 +1911,9 @@ class LxdCharm(CharmBase):
         else:
             self.unit_maintenance("Performing initial configuration")
 
+            configure_storage: bool = True
+            network_dev: str = ""
+
             if mode == "standalone":
                 configure_storage = True
                 network_dev = "lxdbr0"
@@ -1915,6 +1922,11 @@ class LxdCharm(CharmBase):
                 network_dev = "lxdfan0"
             else:  # non-leader and mode=cluster
                 configure_storage = False
+                network_dev = ""
+
+            if not init_storage:
+                configure_storage = False
+            if not init_network:
                 network_dev = ""
 
             client = pylxd.Client()
@@ -2025,6 +2037,8 @@ class LxdCharm(CharmBase):
         # Done with the initialization
         self._stored.config["mode"] = mode
         self._stored.config["lxd-preseed"] = preseed
+        self._stored.config["lxd-init-storage"] = init_storage
+        self._stored.config["lxd-init-network"] = init_network
 
         # Flag any `lxd-*` keys not handled, except the `lxd-listen-*`, there should be none
         for k in self.config_changed():
