@@ -786,9 +786,6 @@ class LxdCharm(CharmBase):
             return
 
         cluster_member_config: List[Dict] = self.get_peer_data_list(self.app, "member_config")
-        if not cluster_member_config:
-            logger.error(f"Missing member_config in {self.app.name}")
-            return
 
         # Use the token and member_config to join the cluster
         logger.debug(f"Cluster joining information found in {self.app.name}")
