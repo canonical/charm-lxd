@@ -786,9 +786,6 @@ class LxdCharm(CharmBase):
             return
 
         cluster_member_config: List[Dict] = self.get_peer_data_list(self.app, "member_config")
-        if not cluster_member_config:
-            logger.error(f"Missing member_config in {self.app.name}")
-            return
 
         # Use the token and member_config to join the cluster
         logger.debug(f"Cluster joining information found in {self.app.name}")
@@ -1069,13 +1066,21 @@ class LxdCharm(CharmBase):
         else:
             logger.debug(f"The client certificate ({cert_name=}) was already trusted")
 
-        host_env = pylxd.Client().host_info["environment"]
+        client = pylxd.Client()
+        host_env = client.host_info["environment"]
+        addresses_list: List[str] = []
+        if host_env["server_clustered"]:
+            for member in client.cluster.members.all():
+                addresses_list.append(member.url.replace("https://", ""))
+        else:
+            addresses_list = host_env["addresses"]
+
         d = {
             "version": "1.0",
             "certificate": host_env["certificate"],
             "certificate_fingerprint": host_env["certificate_fingerprint"],
             # Only strings are allowed so convert list to comma separated string
-            "addresses": ",".join(host_env["addresses"]),
+            "addresses": ",".join(addresses_list),
         }
 
         # In cluster mode, put the info in the app data bag
