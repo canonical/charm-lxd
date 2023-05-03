@@ -1066,13 +1066,21 @@ class LxdCharm(CharmBase):
         else:
             logger.debug(f"The client certificate ({cert_name=}) was already trusted")
 
-        host_env = pylxd.Client().host_info["environment"]
+        client = pylxd.Client()
+        host_env = client.host_info["environment"]
+        addresses_list: List[str] = []
+        if host_env["server_clustered"]:
+            for member in client.cluster.members.all():
+                addresses_list.append(member.url.replace("https://", ""))
+        else:
+            addresses_list = host_env["addresses"]
+
         d = {
             "version": "1.0",
             "certificate": host_env["certificate"],
             "certificate_fingerprint": host_env["certificate_fingerprint"],
             # Only strings are allowed so convert list to comma separated string
-            "addresses": ",".join(host_env["addresses"]),
+            "addresses": ",".join(addresses_list),
         }
 
         # In cluster mode, put the info in the app data bag
