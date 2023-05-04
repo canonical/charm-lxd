@@ -995,6 +995,10 @@ class LxdCharm(CharmBase):
             if not self.unit.is_leader() or not self._stored.lxd_clustered:
                 return
 
+        if not event.app:
+            logger.warning("Unable to remove the client certificate of the departed app")
+            return
+
         fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.app.name}")
         if fingerprint:
             self.lxd_trust_remove(fingerprint)
@@ -1104,6 +1108,10 @@ class LxdCharm(CharmBase):
         if self.config.get("mode", "") == "cluster":
             if not self.unit.is_leader() or not self._stored.lxd_clustered:
                 return
+
+        if not event.unit:
+            logger.warning("Unable to remove the client certificate of the departed unit")
+            return
 
         fingerprint: str = self.lxd_trust_fingerprint(f"juju-relation-{event.unit.name}")
         if fingerprint:
