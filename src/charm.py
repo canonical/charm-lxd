@@ -36,7 +36,13 @@ from ops.charm import (
 )
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError, RelationData
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    ModelError,
+    RelationData,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -201,9 +207,9 @@ class LxdCharm(CharmBase):
         """Retrieve a dict from the peer data bag."""
         if not self.peers or not bag or not key:
             return {}
-        d = json.loads(self.peers.data[bag].get(key, "{}"))
-        if isinstance(d, Dict):
-            return d
+        value = json.loads(self.peers.data[bag].get(key, "{}"))
+        if isinstance(value, Dict):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return {}
 
@@ -211,9 +217,9 @@ class LxdCharm(CharmBase):
         """Retrieve a list from the peer data bag."""
         if not self.peers or not bag or not key:
             return []
-        d = json.loads(self.peers.data[bag].get(key, "[]"))
-        if isinstance(d, List):
-            return d
+        value = json.loads(self.peers.data[bag].get(key, "[]"))
+        if isinstance(value, List):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return []
 
@@ -221,9 +227,9 @@ class LxdCharm(CharmBase):
         """Retrieve a str from the peer data bag."""
         if not self.peers or not bag or not key:
             return ""
-        d = self.peers.data[bag].get(key, "")
-        if isinstance(d, str):
-            return d
+        value = self.peers.data[bag].get(key, "")
+        if isinstance(value, str):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
@@ -231,29 +237,38 @@ class LxdCharm(CharmBase):
         """Pop a str out of the peer data bag."""
         if not self.peers or not bag or not key:
             return ""
-        d = self.peers.data[bag].pop(key, "")
-        if isinstance(d, str):
-            return d
+        value = self.peers.data[bag].pop(key, "")
+        if isinstance(value, str):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
-    def set_peer_data_dict(self, bag, key: str, data: Dict) -> None:
+    def set_peer_data_dict(self, bag, key: str, value: Dict) -> None:
         """Put a dict into the peer data bag if not there or different."""
-        old_data: Dict = self.get_peer_data_dict(bag, key)
-        if old_data != data:
-            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+        if not self.peers or not bag or not key:
+            return
 
-    def set_peer_data_list(self, bag, key: str, data: List) -> None:
+        old_value: Dict = self.get_peer_data_dict(bag, key)
+        if old_value != value:
+            self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+    def set_peer_data_list(self, bag, key: str, value: List) -> None:
         """Put a list into the peer data bag if not there or different."""
-        old_data: List = self.get_peer_data_list(bag, key)
-        if old_data != data:
-            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+        if not self.peers or not bag or not key:
+            return
 
-    def set_peer_data_str(self, bag, key: str, data: str) -> None:
+        old_value: List = self.get_peer_data_list(bag, key)
+        if old_value != value:
+            self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+    def set_peer_data_str(self, bag, key: str, value: str) -> None:
         """Put a str into the peer data bag if not there or different."""
-        old_data: str = self.get_peer_data_str(bag, key)
-        if old_data != data:
-            self.peers.data[bag][key] = data
+        if not self.peers or not bag or not key:
+            return
+
+        old_value: str = self.get_peer_data_str(bag, key)
+        if old_value != value:
+            self.peers.data[bag][key] = value
 
     def is_peer_data_version_supported(self, bag) -> bool:
         """Ensure the version in the peer data bag matches what we support."""
