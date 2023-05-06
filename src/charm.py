@@ -36,7 +36,13 @@ from ops.charm import (
 )
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, ModelError
+from ops.model import (
+    ActiveStatus,
+    BlockedStatus,
+    MaintenanceStatus,
+    ModelError,
+    RelationData,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -201,9 +207,9 @@ class LxdCharm(CharmBase):
         """Retrieve a dict from the peer data bag."""
         if not self.peers or not bag or not key:
             return {}
-        d = json.loads(self.peers.data[bag].get(key, "{}"))
-        if isinstance(d, Dict):
-            return d
+        value = json.loads(self.peers.data[bag].get(key, "{}"))
+        if isinstance(value, Dict):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return {}
 
@@ -211,9 +217,9 @@ class LxdCharm(CharmBase):
         """Retrieve a list from the peer data bag."""
         if not self.peers or not bag or not key:
             return []
-        d = json.loads(self.peers.data[bag].get(key, "[]"))
-        if isinstance(d, List):
-            return d
+        value = json.loads(self.peers.data[bag].get(key, "[]"))
+        if isinstance(value, List):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return []
 
@@ -221,9 +227,9 @@ class LxdCharm(CharmBase):
         """Retrieve a str from the peer data bag."""
         if not self.peers or not bag or not key:
             return ""
-        d = self.peers.data[bag].get(key, "")
-        if isinstance(d, str):
-            return d
+        value = self.peers.data[bag].get(key, "")
+        if isinstance(value, str):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
@@ -231,29 +237,38 @@ class LxdCharm(CharmBase):
         """Pop a str out of the peer data bag."""
         if not self.peers or not bag or not key:
             return ""
-        d = self.peers.data[bag].pop(key, "")
-        if isinstance(d, str):
-            return d
+        value = self.peers.data[bag].pop(key, "")
+        if isinstance(value, str):
+            return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
-    def set_peer_data_dict(self, bag, key: str, data: Dict) -> None:
+    def set_peer_data_dict(self, bag, key: str, value: Dict) -> None:
         """Put a dict into the peer data bag if not there or different."""
-        old_data: Dict = self.get_peer_data_dict(bag, key)
-        if old_data != data:
-            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+        if not self.peers or not bag or not key:
+            return
 
-    def set_peer_data_list(self, bag, key: str, data: List) -> None:
+        old_value: Dict = self.get_peer_data_dict(bag, key)
+        if old_value != value:
+            self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+    def set_peer_data_list(self, bag, key: str, value: List) -> None:
         """Put a list into the peer data bag if not there or different."""
-        old_data: List = self.get_peer_data_list(bag, key)
-        if old_data != data:
-            self.peers.data[bag][key] = json.dumps(data, separators=(",", ":"))
+        if not self.peers or not bag or not key:
+            return
 
-    def set_peer_data_str(self, bag, key: str, data: str) -> None:
+        old_value: List = self.get_peer_data_list(bag, key)
+        if old_value != value:
+            self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+    def set_peer_data_str(self, bag, key: str, value: str) -> None:
         """Put a str into the peer data bag if not there or different."""
-        old_data: str = self.get_peer_data_str(bag, key)
-        if old_data != data:
-            self.peers.data[bag][key] = data
+        if not self.peers or not bag or not key:
+            return
+
+        old_value: str = self.get_peer_data_str(bag, key)
+        if old_value != value:
+            self.peers.data[bag][key] = value
 
     def is_peer_data_version_supported(self, bag) -> bool:
         """Ensure the version in the peer data bag matches what we support."""
@@ -586,18 +601,18 @@ class LxdCharm(CharmBase):
             return
 
         # Get the authentication key (which is the same for every remote unit)
-        key = event.relation.data[event.unit].get("key")
+        key: str = event.relation.data[event.unit].get("key", "")
         if not key:
             logger.error(f"Missing key in {event.unit.name}")
             return
 
         # Get the list of monitor hosts' IPs
-        hosts = []
+        hosts: List[str] = []
         for unit in event.relation.units:
             # Do as charm-ceph-osd which looks for "ceph-public-address"
             # and falls back to the "private-address"
             unit_data = event.relation.data[unit]
-            host = unit_data.get("ceph-public-address") or unit_data.get("private-address")
+            host: str = unit_data.get("ceph-public-address") or unit_data.get("private-address")
             if host:
                 logger.debug(f"Related {event.unit.name} has the IP: {host}")
                 hosts.append(host)
@@ -609,7 +624,7 @@ class LxdCharm(CharmBase):
             return
 
         # Create the config dir if needed
-        ceph_dir = "/var/snap/lxd/common/ceph"
+        ceph_dir: str = "/var/snap/lxd/common/ceph"
         if not os.path.exists(ceph_dir):
             os.mkdir(ceph_dir)
 
@@ -617,16 +632,16 @@ class LxdCharm(CharmBase):
         ceph_user = self.app.name
 
         # Save the credentials in the appropriate keyring file
-        keyring = f"{ceph_dir}/ceph.client.{ceph_user}.keyring"
+        keyring: str = f"{ceph_dir}/ceph.client.{ceph_user}.keyring"
         if os.path.exists(keyring):
             os.remove(keyring)
-        old_umask = os.umask(0o077)
+        old_umask: int = os.umask(0o077)
         with open(keyring, "w") as f:
             f.write(f"[client.{ceph_user}]\n\tkey = {key}\n")
         os.umask(old_umask)
 
         # Save a minimal ceph.conf
-        ceph_conf = f"{ceph_dir}/ceph.conf"
+        ceph_conf: str = f"{ceph_dir}/ceph.conf"
         with open(ceph_conf, "w") as f:
             f.write(f"[global]\n\tmon host = {' '.join(hosts)}\n")
 
@@ -638,10 +653,10 @@ class LxdCharm(CharmBase):
             logger.debug("event.unit is not set")
             return
 
-        d = event.relation.data[event.unit]
-        ca = d.get("ca")
-        cert = d.get("client.cert")
-        key = d.get("client.key")
+        d: RelationData = event.relation.data[event.unit]
+        ca: str = d.get("ca", "")
+        cert: str = d.get("client.cert", "")
+        key: str = d.get("client.key", "")
 
         if not ca or not cert or not key:
             logger.error(f"Missing ca, cert and/or key in {event.unit.name}")
@@ -670,24 +685,24 @@ class LxdCharm(CharmBase):
         )
 
         # Create the config dir if needed
-        ovn_dir = "/var/snap/lxd/common/ovn"
+        ovn_dir: str = "/var/snap/lxd/common/ovn"
         if not os.path.exists(ovn_dir):
             os.mkdir(ovn_dir)
 
         # Reuse Openstack file names
-        ca_crt = f"{ovn_dir}/ovn-central.crt"
+        ca_crt: str = f"{ovn_dir}/ovn-central.crt"
         with open(ca_crt, "w") as f:
             f.write(ca)
 
-        cert_host = f"{ovn_dir}/cert_host"
+        cert_host: str = f"{ovn_dir}/cert_host"
         with open(cert_host, "w") as f:
             f.write(cert)
 
         # Save the credentials in the appropriate keyring file
-        key_host = f"{ovn_dir}/key_host"
+        key_host: str = f"{ovn_dir}/key_host"
         if os.path.exists(key_host):
             os.remove(key_host)
-        old_umask = os.umask(0o077)
+        old_umask: int = os.umask(0o077)
         with open(key_host, "w") as f:
             f.write(key)
         os.umask(old_umask)
@@ -1332,7 +1347,7 @@ class LxdCharm(CharmBase):
         if fingerprint:
             self.lxd_trust_remove(fingerprint)
 
-    def config_changed(self) -> dict:
+    def config_changed(self) -> Dict:
         """Figure out what changed."""
         new_config = self.config
         old_config = self._stored.config
