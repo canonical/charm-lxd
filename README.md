@@ -1,10 +1,10 @@
 # LXD
 
-The [LXD charmed operator](https://github.com/canonical/charm-lxd) provides a simple way to deploy [LXD](https://linuxcontainers.org/lxd/) at scale using [Juju](https://jaas.ai/).
+The [LXD charmed operator](https://github.com/canonical/charm-lxd) provides a simple way to deploy [LXD](https://ubuntu.com/lxd) at scale using [Juju](https://jaas.ai/).
 
 ## What is LXD?
 
-<img align="right" alt="LXD logo" src="https://linuxcontainers.org/static/img/containers.svg">
+<img align="right" alt="LXD logo" src="https://documentation.ubuntu.com/lxd/en/latest/_static/tag.png">
 
 [LXD](https://linuxcontainers.org/lxd/introduction/) is a next generation system container and virtual machine manager. It offers a unified user experience around full Linux systems running inside containers or virtual machines.
 
@@ -104,6 +104,6 @@ When force removing a machine/unit, Juju doesn't always emit the `cluster_relati
 
 ## Additional information
 
-- [LXD web site](https://linuxcontainers.org/lxd/)
-- [LXD GitHub](https://github.com/lxc/lxd/)
-- [LXD Docs](https://linuxcontainers.org/lxd/docs/master/)
+- [LXD web site](https://ubuntu.com/lxd)
+- [LXD GitHub](https://github.com/canonical/lxd/)
+- [LXD Docs](https://documentation.ubuntu.com/lxd/en/latest/)
