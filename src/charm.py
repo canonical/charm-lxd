@@ -97,7 +97,7 @@ class LxdCharm(CharmBase):
             lxd_initialized=False,
             lxd_snap_path="",
             ovn_certificates_present=False,
-            reboot_required=False,
+            reboot_required="false",
         )
 
         # XXX: not using the default relation_name="grafana-dashboard" to keep supporting the old
@@ -481,7 +481,7 @@ class LxdCharm(CharmBase):
             return
 
         # If some changes needed a reboot to take effect, enter blocked status
-        if self._stored.reboot_required:
+        if self._stored.reboot_required == "true":
             self.unit_blocked("Machine reboot required")
             return
 
@@ -550,7 +550,7 @@ class LxdCharm(CharmBase):
         # Check if any required reboot was done
         self.system_clear_reboot_required()
 
-        if not self._stored.reboot_required and isinstance(self.unit.status, BlockedStatus):
+        if self._stored.reboot_required == "false" and isinstance(self.unit.status, BlockedStatus):
             self.unit_active("Pending configuration changes were applied during the last reboot")
 
         # Apply pending config changes (those were likely queued up while the unit was
@@ -2512,8 +2512,8 @@ class LxdCharm(CharmBase):
     def system_clear_reboot_required(self) -> None:
         """Clear the reboot_required flag if a reboot occurred."""
         # If the required reboot occurred so let's clear the flag
-        if self._stored.reboot_required and not os.path.exists(REBOOT_REQUIRED_FILE):
-            self._stored.reboot_required = False
+        if self._stored.reboot_required == "true" and not os.path.exists(REBOOT_REQUIRED_FILE):
+            self._stored.reboot_required = "false"
             logger.debug("Required reboot done")
 
     def system_set_reboot_required(self) -> None:
@@ -2521,7 +2521,7 @@ class LxdCharm(CharmBase):
         # Touch a flag file indicating that a reboot is required.
         try:
             open(REBOOT_REQUIRED_FILE, "a").close()
-            self._stored.reboot_required = True
+            self._stored.reboot_required = "true"
         except OSError:
             logger.warning(f"Failed to create: {REBOOT_REQUIRED_FILE}")
 
