@@ -17,7 +17,7 @@ from ops.charm import (
 )
 from ops.framework import StoredState
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import ActiveStatus, Application, BlockedStatus, MaintenanceStatus, Unit
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class HttpsClientCharm(CharmBase):
         # Initialize the persistent storage if needed
         self._stored.set_default(
             cert="",
-            remote_lxd_is_clustered=False,
+            remote_lxd_is_clustered="false",
         )
 
         # Main event handlers
@@ -125,8 +125,8 @@ class HttpsClientCharm(CharmBase):
 
     def _on_https_relation_broken(self, event: RelationBrokenEvent) -> None:
         """Forget that we previously dealt with a remote LXD cluster."""
-        if self._stored.remote_lxd_is_clustered:
-            self._stored.remote_lxd_is_clustered = False
+        if self._stored.remote_lxd_is_clustered == "true":
+            self._stored.remote_lxd_is_clustered = "false"
             logger.debug("Forgetting our previous relation with a remote LXD cluster")
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -138,7 +138,7 @@ class HttpsClientCharm(CharmBase):
         """
         # If we are dealing with a clustered LXD, only check connectivity
         # once for the whole cluster, not individual units
-        if self._stored.remote_lxd_is_clustered:
+        if self._stored.remote_lxd_is_clustered == "true":
             if event.unit:
                 remote_unit = event.unit.name
             else:
@@ -155,10 +155,16 @@ class HttpsClientCharm(CharmBase):
             if version:
                 # If the app data bag is where we found the version it
                 # means we are dealing with a LXD cluster at the other end
-                self._stored.remote_lxd_is_clustered = bag == event.app
+                if bag == event.app:
+                    self._stored.remote_lxd_is_clustered = "true"
+                else:
+                    self._stored.remote_lxd_is_clustered = "false"
                 break
             else:
                 logger.debug(f"No version found in {bag.name}")
+
+        # Help the type checker
+        assert isinstance(bag, Application) or isinstance(bag, Unit)
 
         if not version:
             logger.error("No version found in any data bags")
@@ -209,7 +215,7 @@ class HttpsClientCharm(CharmBase):
         # Report remote LXD version to show the connection worked
         server_version = client.host_info["environment"]["server_version"]
 
-        if self._stored.remote_lxd_is_clustered:
+        if self._stored.remote_lxd_is_clustered == "true":
             msg = f"The cluster runs LXD version: {server_version}"
         else:
             msg = f"{bag.name} runs LXD version: {server_version}"
