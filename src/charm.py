@@ -20,7 +20,7 @@ import pylxd
 import yaml
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
-from charms.observability_libs.v0.juju_topology import JujuTopology
+from cosl.juju_topology import JujuTopology
 from cryptography import x509
 from ops.charm import (
     ActionEvent,
