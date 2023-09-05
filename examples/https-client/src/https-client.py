@@ -36,7 +36,7 @@ class HttpsClientCharm(CharmBase):
 
         # Initialize the persistent storage if needed
         self._stored.set_default(
-            cert=None,
+            cert="",
             remote_lxd_is_clustered=False,
         )
 
@@ -81,42 +81,47 @@ class HttpsClientCharm(CharmBase):
             https_relation.data[self.unit].update(self.config_to_databag())
 
     def _on_charm_install(self, event: InstallEvent) -> None:
-        """Generate a self-signed cert."""
-        if not self._stored.cert:
-            self.unit_maintenance("Generating a self-signed cert")
-            cmd = [
-                "openssl",
-                "req",
-                "-x509",
-                "-newkey",
-                "ec",
-                "-pkeyopt",
-                "ec_paramgen_curve:secp384r1",
-                "-sha384",
-                "-keyout",
-                "client.key",
-                "-out",
-                "client.crt",
-                "-nodes",
-                "-subj",
-                f"/CN={self.unit.name.replace('/', '-')}",
-                "-days",
-                "3650",
-            ]
-            try:
-                subprocess.run(cmd, capture_output=True, check=True)
-            except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
-                return
+        """Generate a self-signed cert if needed."""
+        if self._stored.cert != "":
+            return
 
-            # Save the self-signed certificate for later use
-            with open("client.crt") as f:
-                self._stored.cert = f.read()
+        self.unit_maintenance("Generating a self-signed cert")
+        cmd = [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:secp384r1",
+            "-sha384",
+            "-keyout",
+            "client.key",
+            "-out",
+            "client.crt",
+            "-nodes",
+            "-subj",
+            f"/CN={self.unit.name.replace('/', '-')}",
+            "-days",
+            "3650",
+        ]
+        try:
+            subprocess.run(cmd, capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            return
+
+        # Save the self-signed certificate for later use
+        with open("client.crt") as f:
+            self._stored.cert = f.read()
 
     def _on_charm_start(self, event: StartEvent) -> None:
         """Start the unit if a cert was properly generated on install."""
-        if self._stored.cert:
-            self.unit_active("Starting the https-client charm")
+        if self._stored.cert == "":
+            self.unit_blocked("no cert available")
+            return
+
+        self.unit_active("Starting the https-client charm")
 
     def _on_https_relation_broken(self, event: RelationBrokenEvent) -> None:
         """Forget that we previously dealt with a remote LXD cluster."""
@@ -212,7 +217,7 @@ class HttpsClientCharm(CharmBase):
 
     def _on_https_relation_created(self, event: RelationCreatedEvent) -> None:
         """Upload our client certificate to the remote unit."""
-        if not self._stored.cert:
+        if self._stored.cert == "":
             logger.error("no cert available")
             return
 
