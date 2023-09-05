@@ -58,6 +58,7 @@ module = [
   "charms.grafana_k8s.v0.grafana_dashboard",
   "charms.loki_k8s.v0.loki_push_api",
   "charms.observability_libs.v0.juju_topology",
+  "cosl.*",
   "ops.*",
   "pylxd.*",
 ]
