@@ -1413,10 +1413,14 @@ class LxdCharm(CharmBase):
 
         net = binding.network
 
-        if not require_ipv4:
-            return str(net.ingress_address)
+        # ingress_addresses can contains strings (hostnames) while we only want IPs
+        addrs = [a for a in net.ingress_addresses if not isinstance(a, str)]
+        if not addrs:
+            return ""
 
-        addrs = net.ingress_addresses
+        if not require_ipv4:
+            return str(addrs[0])
+
         ipv4_addrs = [a for a in addrs if a.version == 4]
         if ipv4_addrs:
             return str(ipv4_addrs[0])
