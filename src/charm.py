@@ -391,10 +391,10 @@ class LxdCharm(CharmBase):
 
     def _on_action_get_client_token(self, event: ActionEvent) -> None:
         """Return a client certificate add token (to use with: `lxc remote add $rmt $token`)."""
-        name = event.params.get("name")
-        projects = event.params.get("projects")
+        name: str = event.params.get("name", "")
+        projects: str = event.params.get("projects", "")
 
-        token = self.lxd_trust_token(name=name, projects=projects)
+        token: str = self.lxd_trust_token(name=name, projects=projects)
         if token:
             msg = f"Client {name} certificate add token:\n{token}"
             event.set_results({"result": msg})
@@ -422,10 +422,10 @@ class LxdCharm(CharmBase):
         # so those need to be processed even when config_changed() returns nothing
         for listener in ("bgp", "dns", "https", "metrics"):
             # Check if we should listen
-            toggle_key = f"lxd-listen-{listener}"
-            toggle_value = self.config.get(toggle_key)
+            toggle_key: str = f"lxd-listen-{listener}"
+            toggle_value: str = self.config.get(toggle_key, "")
             if toggle_value:
-                space_addr = self.juju_space_get_address(listener)
+                space_addr: str = self.juju_space_get_address(listener)
 
                 # Configure a listener or update it if needed
                 if space_addr and space_addr != self._stored.addresses.get(listener):
