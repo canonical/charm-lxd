@@ -15,7 +15,6 @@ from ops.charm import (
     RelationCreatedEvent,
     StartEvent,
 )
-from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, Application, BlockedStatus, MaintenanceStatus, Unit
 from pathlib import Path
@@ -29,16 +28,9 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 class HttpsClientCharm(CharmBase):
     """https-client charm class."""
 
-    _stored = StoredState()
-
     def __init__(self, *args):
         """Initialize charm's variables."""
         super().__init__(*args)
-
-        # Initialize the persistent storage if needed
-        self._stored.set_default(
-            remote_lxd_is_clustered="false",
-        )
 
         # Main event handlers
         self.framework.observe(self.on.config_changed, self._on_charm_config_changed)
@@ -86,6 +78,11 @@ class HttpsClientCharm(CharmBase):
             return ""
 
         return cert
+
+    @property
+    def remote_lxd_is_clustered(self) -> bool:
+        """Return True if the remote LXD is clustered, False otherwise."""
+        return Path("cluster.crt").exists()
 
     def config_to_databag(self) -> dict:
         """Translate config data to be storable in a data bag."""
@@ -135,8 +132,8 @@ class HttpsClientCharm(CharmBase):
 
     def _on_https_relation_broken(self, event: RelationBrokenEvent) -> None:
         """Forget that we previously dealt with a remote LXD cluster."""
-        if self._stored.remote_lxd_is_clustered == "true":
-            self._stored.remote_lxd_is_clustered = "false"
+        if self.remote_lxd_is_clustered:
+            Path("cluster.crt").unlink()
             logger.debug("Forgetting our previous relation with a remote LXD cluster")
 
     def _on_https_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -148,7 +145,7 @@ class HttpsClientCharm(CharmBase):
         """
         # If we are dealing with a clustered LXD, only check connectivity
         # once for the whole cluster, not individual units
-        if self._stored.remote_lxd_is_clustered == "true":
+        if self.remote_lxd_is_clustered:
             if event.unit:
                 remote_unit = event.unit.name
             else:
@@ -156,19 +153,20 @@ class HttpsClientCharm(CharmBase):
             logger.debug(f"{remote_unit} is part of a known cluster, nothing to do")
             return
 
+        version: str = ""
+        remote_crt: str = "server.crt"
+
         for bag in (event.app, event.unit):
             if not bag:
                 continue
 
             d = event.relation.data[bag]
-            version = d.get("version")
+            version = d.get("version", "")
             if version:
                 # If the app data bag is where we found the version it
                 # means we are dealing with a LXD cluster at the other end
                 if bag == event.app:
-                    self._stored.remote_lxd_is_clustered = "true"
-                else:
-                    self._stored.remote_lxd_is_clustered = "false"
+                    remote_crt = "cluster.crt"
                 break
             else:
                 logger.debug(f"No version found in {bag.name}")
@@ -184,8 +182,8 @@ class HttpsClientCharm(CharmBase):
             logger.error(f"Incompatible version ({version}) found in {bag.name}")
             return
 
-        certificate = d.get("certificate")
-        certificate_fingerprint = d.get("certificate_fingerprint")
+        certificate: str = d.get("certificate", "")
+        certificate_fingerprint: str = d.get("certificate_fingerprint", "")
         addresses = d.get("addresses", [])
 
         # Convert string to list
@@ -212,20 +210,20 @@ class HttpsClientCharm(CharmBase):
             return
 
         # pylxd needs a CA cert on disk for verification
-        with open("server.crt", "w") as f:
+        with open(remote_crt, "w") as f:
             f.write(certificate)
 
         # Connect to the remote lxd unit
         client = pylxd.Client(
             endpoint=f"https://{addresses[0]}",
             cert=("client.crt", "client.key"),
-            verify="server.crt",
+            verify=remote_crt,
         )
 
         # Report remote LXD version to show the connection worked
         server_version = client.host_info["environment"]["server_version"]
 
-        if self._stored.remote_lxd_is_clustered == "true":
+        if remote_crt == "cluster.crt":
             msg = f"The cluster runs LXD version: {server_version}"
         else:
             msg = f"{bag.name} runs LXD version: {server_version}"
