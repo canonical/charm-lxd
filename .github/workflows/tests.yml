@@ -42,7 +42,6 @@ jobs:
           sudo lxd init --auto --storage-backend=zfs --storage-create-loop=10
           sudo snap install charmcraft --classic
           sudo snap install juju
-          sudo snap install juju-wait --classic
 
     - name: Build charms
       run: |
@@ -83,13 +82,14 @@ jobs:
           }
           trap debug err exit
 
+          juju add-model ci-testing
           juju model-config logging-config="<root>=WARNING;unit=DEBUG"
 
           # Test 20.04 charm in standalone mode
           juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config lxd-listen-https=true
           juju deploy ./https-client_ubuntu-22.04-amd64.charm
           juju relate https-client lxd
-          juju wait
+          juju wait-for model ci-testing
           juju status --relations
 
           # confirm lxd now trusts the client cert
@@ -97,7 +97,7 @@ jobs:
 
           # break the relationship to have the client cert removed
           juju remove-relation https-client lxd
-          juju wait
+          juju wait-for model ci-testing
 
           # check that the client cert was not left behind
           ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
@@ -105,7 +105,7 @@ jobs:
           # set the projects config and re-establish the relation
           juju config https-client projects="default"
           juju relate https-client lxd
-          juju wait
+          juju wait-for model ci-testing
 
           # check that the client cert is now restricted
           FINGERPRINT="$(juju run --unit lxd/leader -- lxc config trust list --format csv | awk -F, '/,juju-relation-https-client/ {print $4}')"
@@ -115,7 +115,7 @@ jobs:
           # removing the https-client application will break the
           # relation causing the removal of the cert
           juju remove-application https-client
-          juju wait
+          juju wait-for model ci-testing
           ! juju run --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
           juju status --relations
 
@@ -124,7 +124,7 @@ jobs:
           set -eux
           # open the dns, bgp and metrics ports
           juju config lxd lxd-listen-dns=true lxd-listen-bgp=true lxd-listen-metrics=true
-          juju wait
+          juju wait-for model ci-testing
           juju status
           # check that the dns, bgp, https and metrics ports are opened
           OPENED_PORTS="$(juju run --unit lxd/leader "opened-ports" | grep -cE '^(53|179|8443|9100)/tcp$')"
@@ -141,7 +141,7 @@ jobs:
       run: |
           set -eux
           juju add-unit lxd
-          juju wait
+          juju wait-for model ci-testing
           juju status
 
     - name: Test add-trusted-client action
@@ -163,7 +163,7 @@ jobs:
       run: |
           set -eux
           juju remove-application --force lxd
-          juju wait
+          juju wait-for model ci-testing
           juju status
 
     - name: Cluster tests
@@ -185,7 +185,7 @@ jobs:
           # Test 22.04 charm in cluster mode
           NODE_CREATED="3"
           juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
-          juju wait
+          juju wait-for model ci-testing
           juju status --relations
 
           NODE_JOINED="$(juju run --unit lxd/leader -- lxc cluster list --format csv | grep -cF ',ONLINE,Fully operational')"
