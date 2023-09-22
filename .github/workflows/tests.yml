@@ -55,6 +55,12 @@ jobs:
           # cleanup project to reclaim space
           sudo -g lxd lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty sudo -g lxd lxc delete --project charmcraft
 
+    - name: Upload charms
+      uses: actions/upload-artifact@v3
+      with:
+        name: charms
+        path: ./*.charm
+
     - name: Bootstrap Juju
       run: |
           set -eux
