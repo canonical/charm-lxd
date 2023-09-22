@@ -52,6 +52,9 @@ jobs:
           # ancillary charm for testing purposes
           sudo -g lxd charmcraft pack -v --project-dir examples/https-client
 
+          # cleanup project to reclaim space
+          sudo -g lxd lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty sudo -g lxd lxc delete --project charmcraft
+
     - name: Bootstrap Juju
       run: |
           set -eux
