@@ -153,7 +153,7 @@ jobs:
           rm -rf ~/snap/lxd/common/config/
           lxc remote add localhost --accept-certificate --password=abc 2>/dev/null || true
 
-          juju run-action --wait lxd/leader add-trusted-client name="$CERT_NAME" cert="$(cat ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is now trusted'
+          juju run --wait=2m lxd/leader add-trusted-client name="$CERT_NAME" cert="$(cat ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is now trusted'
 
           # Confirm the user's cert was added to the trusted list
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
@@ -197,7 +197,7 @@ jobs:
           CERT_NAME="get-client-token-$$"
           REMOTE_NAME="rmt-$$"
 
-          token="$(juju run-action --wait lxd/leader get-client-token name="$CERT_NAME" | sed -n '/^\s\+Client [^ ]\+ certificate add token:$/,+1 p' | sed '/^\s\+Client /d; s/^\s\+//')"
+          token="$(juju run --wait=2m lxd/leader get-client-token name="$CERT_NAME" | sed -n '/^\s\+Client [^ ]\+ certificate add token:$/,+1 p' | sed '/^\s\+Client /d; s/^\s\+//')"
           lxc remote add "$REMOTE_NAME" "$token"
 
           # Test the newly added remote
