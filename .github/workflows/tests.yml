@@ -84,6 +84,7 @@ jobs:
               set +e
               juju debug-log --replay --level debug >> juju-debug.log
               echo "# === $STEP_NAME ends === #" >> juju-debug.log
+              juju status --relations >> juju-debug.log
               exit "$rc"
           }
           trap debug err exit
@@ -185,6 +186,7 @@ jobs:
               set +e
               juju debug-log --replay --level debug >> juju-debug.log
               echo "# === $STEP_NAME ends === #" >> juju-debug.log
+              juju status --relations >> juju-debug.log
               exit "$rc"
           }
           trap debug err exit
