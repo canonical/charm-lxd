@@ -72,6 +72,12 @@ jobs:
           STEP_NAME="lxd-https relation"
           echo "# === $STEP_NAME starts === #" >> juju-debug.log
 
+          # Valid statuses list: https://juju.is/docs/juju/status
+          juju_wait() {
+            # XXX: this wait-for query is supposed to work in 3.1.6 but errors out in 3.1.5
+            juju wait-for model ci-testing --query='life=="alive" && status=="available" && len(applications) > 0 && forEach(applications, app => app.status == "active") && len(units) > 0 && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || sleep 300
+          }
+
           # capture juju's logs on error
           debug() {
               rc="$?"
@@ -89,7 +95,8 @@ jobs:
           juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config lxd-listen-https=true
           juju deploy ./https-client_ubuntu-22.04-amd64.charm
           juju relate https-client lxd
-          juju wait-for model ci-testing
+          juju_wait
+
           juju status --relations
 
           # confirm lxd now trusts the client cert
@@ -97,7 +104,7 @@ jobs:
 
           # break the relationship to have the client cert removed
           juju remove-relation https-client lxd
-          juju wait-for model ci-testing
+          juju_wait
 
           # check that the client cert was not left behind
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
@@ -105,7 +112,7 @@ jobs:
           # set the projects config and re-establish the relation
           juju config https-client projects="default"
           juju relate https-client lxd
-          juju wait-for model ci-testing
+          juju_wait
 
           # check that the client cert is now restricted
           FINGERPRINT="$(juju exec --unit lxd/leader -- lxc config trust list --format csv | awk -F, '/,juju-relation-https-client/ {print $4}')"
@@ -115,7 +122,7 @@ jobs:
           # removing the https-client application will break the
           # relation causing the removal of the cert
           juju remove-application https-client
-          juju wait-for model ci-testing
+          juju_wait
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
           juju status --relations
 
@@ -124,14 +131,14 @@ jobs:
           set -eux
           # open the dns, bgp and metrics ports
           juju config lxd lxd-listen-dns=true lxd-listen-bgp=true lxd-listen-metrics=true
-          juju wait-for model ci-testing
+          juju wait-for application lxd --query='status=="active"'
           juju status
           # check that the dns, bgp, https and metrics ports are opened
           OPENED_PORTS="$(juju exec --unit lxd/leader "opened-ports" | grep -cE '^(53|179|8443|9100)/tcp$')"
           [ "$OPENED_PORTS" -eq 4 ]
           # close the dns, bgp and metrics ports
           juju config lxd lxd-listen-dns=false lxd-listen-bgp=false lxd-listen-metrics=false
-          juju wait
+          juju wait-for application lxd --query='status=="active"'
           juju status
           # check that only the https port remains opened
           HTTPS_PORT="$(juju exec --unit lxd/leader "opened-ports" | grep -E '^[0-9]+/tcp$')"
@@ -141,7 +148,7 @@ jobs:
       run: |
           set -eux
           juju add-unit lxd
-          juju wait-for model ci-testing
+          juju wait-for application lxd --query='status=="active"'
           juju status
 
     - name: Test add-trusted-client action
@@ -163,7 +170,7 @@ jobs:
       run: |
           set -eux
           juju remove-application --force lxd
-          juju wait-for model ci-testing
+          sleep 10
           juju status
 
     - name: Cluster tests
@@ -185,7 +192,8 @@ jobs:
           # Test 22.04 charm in cluster mode
           NODE_CREATED="3"
           juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
-          juju wait-for model ci-testing
+          # XXX: currently fails with `ERROR Runtime Error: identifier "units" not found on ApplicationInfo: invalid identifier` but might work with 3.1.6?
+          juju wait-for application lxd --query='forEach(units, unit => unit.life=="alive" && unit.status=="available")' || sleep 300  # wait for leader-election
           juju status --relations
 
           NODE_JOINED="$(juju exec --unit lxd/leader -- lxc cluster list --format csv | grep -cF ',ONLINE,Fully operational')"
@@ -204,6 +212,7 @@ jobs:
           lxc config show "$REMOTE_NAME":
 
           # Confirm the user's cert was added to the trusted list
+          sleep 10
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
     - name: Check for errors
