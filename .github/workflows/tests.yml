@@ -41,7 +41,7 @@ jobs:
           sudo adduser "$USER" lxd
           sudo lxd init --auto --storage-backend=zfs --storage-create-loop=10
           sudo snap install charmcraft --classic
-          sudo snap install juju --classic
+          sudo snap install juju
           sudo snap install juju-wait --classic
 
     - name: Build charms
