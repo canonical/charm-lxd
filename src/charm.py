@@ -1145,6 +1145,10 @@ class LxdCharm(CharmBase):
         # a single API URL, so pick the first.
         loki_api_url = loki_endpoints[0]["url"]
 
+        # LXD assumes the Loki API URL only contains: protocol + name + port (optional)
+        if loki_api_url.endswith("/loki/api/v1/push"):
+            loki_api_url = loki_api_url[: -len("/loki/api/v1/push")]
+
         # Check if LXD supports streaming to Loki
         client = pylxd.Client()
         if not client.has_api_extension("loki"):
