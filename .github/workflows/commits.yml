@@ -2,6 +2,9 @@ name: Commits
 on:
   - pull_request
 
+permissions:
+  contents: read
+
 jobs:
   cla-check:
     name: Canonical CLA signed

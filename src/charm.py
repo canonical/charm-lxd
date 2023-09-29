@@ -20,7 +20,7 @@ import pylxd
 import yaml
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
-from charms.observability_libs.v0.juju_topology import JujuTopology
+from cosl.juju_topology import JujuTopology
 from cryptography import x509
 from ops.charm import (
     ActionEvent,
@@ -97,7 +97,7 @@ class LxdCharm(CharmBase):
             lxd_initialized=False,
             lxd_snap_path="",
             ovn_certificates_present=False,
-            reboot_required=False,
+            reboot_required="false",
         )
 
         # XXX: not using the default relation_name="grafana-dashboard" to keep supporting the old
@@ -391,10 +391,10 @@ class LxdCharm(CharmBase):
 
     def _on_action_get_client_token(self, event: ActionEvent) -> None:
         """Return a client certificate add token (to use with: `lxc remote add $rmt $token`)."""
-        name = event.params.get("name")
-        projects = event.params.get("projects")
+        name: str = event.params.get("name", "")
+        projects: str = event.params.get("projects", "")
 
-        token = self.lxd_trust_token(name=name, projects=projects)
+        token: str = self.lxd_trust_token(name=name, projects=projects)
         if token:
             msg = f"Client {name} certificate add token:\n{token}"
             event.set_results({"result": msg})
@@ -422,10 +422,10 @@ class LxdCharm(CharmBase):
         # so those need to be processed even when config_changed() returns nothing
         for listener in ("bgp", "dns", "https", "metrics"):
             # Check if we should listen
-            toggle_key = f"lxd-listen-{listener}"
-            toggle_value = self.config.get(toggle_key)
+            toggle_key: str = f"lxd-listen-{listener}"
+            toggle_value: str = self.config.get(toggle_key, "")
             if toggle_value:
-                space_addr = self.juju_space_get_address(listener)
+                space_addr: str = self.juju_space_get_address(listener)
 
                 # Configure a listener or update it if needed
                 if space_addr and space_addr != self._stored.addresses.get(listener):
@@ -481,7 +481,7 @@ class LxdCharm(CharmBase):
             return
 
         # If some changes needed a reboot to take effect, enter blocked status
-        if self._stored.reboot_required:
+        if self._stored.reboot_required == "true":
             self.unit_blocked("Machine reboot required")
             return
 
@@ -550,7 +550,7 @@ class LxdCharm(CharmBase):
         # Check if any required reboot was done
         self.system_clear_reboot_required()
 
-        if not self._stored.reboot_required and isinstance(self.unit.status, BlockedStatus):
+        if self._stored.reboot_required == "false" and isinstance(self.unit.status, BlockedStatus):
             self.unit_active("Pending configuration changes were applied during the last reboot")
 
         # Apply pending config changes (those were likely queued up while the unit was
@@ -1413,10 +1413,14 @@ class LxdCharm(CharmBase):
 
         net = binding.network
 
-        if not require_ipv4:
-            return str(net.ingress_address)
+        # ingress_addresses can contains strings (hostnames) while we only want IPs
+        addrs = [a for a in net.ingress_addresses if not isinstance(a, str)]
+        if not addrs:
+            return ""
 
-        addrs = net.ingress_addresses
+        if not require_ipv4:
+            return str(addrs[0])
+
         ipv4_addrs = [a for a in addrs if a.version == 4]
         if ipv4_addrs:
             return str(ipv4_addrs[0])
@@ -2512,8 +2516,8 @@ class LxdCharm(CharmBase):
     def system_clear_reboot_required(self) -> None:
         """Clear the reboot_required flag if a reboot occurred."""
         # If the required reboot occurred so let's clear the flag
-        if self._stored.reboot_required and not os.path.exists(REBOOT_REQUIRED_FILE):
-            self._stored.reboot_required = False
+        if self._stored.reboot_required == "true" and not os.path.exists(REBOOT_REQUIRED_FILE):
+            self._stored.reboot_required = "false"
             logger.debug("Required reboot done")
 
     def system_set_reboot_required(self) -> None:
@@ -2521,7 +2525,7 @@ class LxdCharm(CharmBase):
         # Touch a flag file indicating that a reboot is required.
         try:
             open(REBOOT_REQUIRED_FILE, "a").close()
-            self._stored.reboot_required = True
+            self._stored.reboot_required = "true"
         except OSError:
             logger.warning(f"Failed to create: {REBOOT_REQUIRED_FILE}")
 
