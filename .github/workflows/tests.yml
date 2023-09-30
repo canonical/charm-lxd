@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   static-analysis:
     name: Static analysis
@@ -217,7 +221,6 @@ jobs:
           lxc config show "$REMOTE_NAME":
 
           # Confirm the user's cert was added to the trusted list
-          sleep 10
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
     - name: Check for errors
