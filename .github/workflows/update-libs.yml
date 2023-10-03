@@ -2,13 +2,38 @@ name: Auto-update Charm Libraries
 on:
   # Manual trigger
   workflow_dispatch:
-  # Check for updates every 12 hours
   schedule:
-    - cron: "17 */12 * * *"
+    - cron: "33 22 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   update-lib:
     name: Check libraries
-    uses: canonical/observability/.github/workflows/update-libs.yaml@main
-    secrets: inherit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      - name: Fetch charm libraries
+        run: |
+          sudo snap install charmcraft --classic
+          charmcraft fetch-lib
+
+      - name: Create a PR for local changes
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "chore: update charm libraries"
+          committer: "Github Actions <github-actions@github.com>"
+          author: "Github Actions <github-actions@github.com>"
+          title: "Update charm libraries"
+          body: |
+            Automated action to fetch latest version of charm libraries. The branch of this PR 
+            will be wiped during the next check. Unless you really know what you're doing, you 
+            most likely don't want to push any commits to this branch.
+          branch: "chore/auto-libs"
+          delete-branch: true
