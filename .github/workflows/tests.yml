@@ -81,8 +81,8 @@ jobs:
 
           # Valid statuses list: https://juju.is/docs/juju/status
           juju_wait() {
-            # XXX: this wait-for query is supposed to work in 3.1.6 but errors out in 3.1.5
-            juju wait-for model ci-testing --query='life=="alive" && status=="available" && len(applications) > 0 && forEach(applications, app => app.status == "active") && len(units) > 0 && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || sleep 300
+            # XXX: wait-for may timeout while things are usable so continue on error
+            juju wait-for model ci-testing --query='life=="alive" && status=="available" && len(applications) > 0 && forEach(applications, app => app.status == "active") && len(units) > 0 && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || true
           }
 
           # capture juju's logs on error
@@ -201,8 +201,7 @@ jobs:
           # Test 22.04 charm in cluster mode
           NODE_CREATED="3"
           juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
-          # XXX: currently fails with `ERROR Runtime Error: identifier "units" not found on ApplicationInfo: invalid identifier` but might work with 3.1.6?
-          juju wait-for application lxd --query='forEach(units, unit => unit.life=="alive" && unit.status=="available")' || sleep 300  # wait for leader-election
+          juju wait-for application lxd --query='life=="alive" && status=="available" && forEach(units, unit => unit.life=="alive")' || true  # wait for leader-election
           juju status --relations
 
           NODE_JOINED="$(juju exec --unit lxd/leader -- lxc cluster list --format csv | grep -cF ',ONLINE,Fully operational')"
