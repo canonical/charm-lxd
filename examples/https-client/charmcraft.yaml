@@ -1,15 +1,15 @@
 type: charm
 bases:
-  - name: ubuntu
-    channel: "22.04"
+- name: ubuntu
+  channel: "22.04"
 
 parts:
   charm:
     build-packages:
-      - cargo
-      - git
-      - libffi-dev
-      - libssl-dev
-      - pkg-config
-      - rustc
+    - cargo
+    - git
+    - libffi-dev
+    - libssl-dev
+    - pkg-config
+    - rustc
     charm-entrypoint: src/https-client.py
