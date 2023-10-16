@@ -1,27 +1,27 @@
 type: charm
 bases:
-  - name: ubuntu
-    channel: "20.04"
-  - name: ubuntu
-    channel: "22.04"
+- name: ubuntu
+  channel: "20.04"
+- name: ubuntu
+  channel: "22.04"
 
 parts:
   charm:
     build-packages:
-      - ca-certificates
-      - cargo
-      - git
-      - libffi-dev
-      - libssl-dev
-      - pkg-config
-      - python3-dev
-      - rustc
+    - ca-certificates
+    - cargo
+    - git
+    - libffi-dev
+    - libssl-dev
+    - pkg-config
+    - python3-dev
+    - rustc
   grafana-dashboard:
-    plugin: dump
-    source: .
-    override-pull: |
+    build-packages:
+      - wget
+    override-pull: |-
       mkdir -p src/grafana_dashboards
       wget --https-only https://grafana.com/api/dashboards/19131/revisions/latest/download -O src/grafana_dashboards/LXD.json
       sed -i 's/{DS_LXD}/{prometheusds}/g' src/grafana_dashboards/LXD.json
-    build-packages:
-      - wget
+    plugin: dump
+    source: .
