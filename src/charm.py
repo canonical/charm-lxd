@@ -390,7 +390,19 @@ class LxdCharm(CharmBase):
         logger.debug("lxd.buginfo called successfully")
 
     def _on_action_get_client_token(self, event: ActionEvent) -> None:
-        """Return a client certificate add token (to use with: `lxc remote add $rmt $token`)."""
+        """Return a client certificate add token (to use with: `lxc remote add $rmt $token`).
+
+        An HTTPS listener (lxd-listener-https=true) is required.
+        """
+        if not self._stored.config["lxd-listen-https"]:
+            msg = (
+                "The get-client-token action is not usable (lxd-listen-https=false), "
+                "please update the config and try again."
+            )
+            event.fail(msg)
+            logger.error(msg)
+            return
+
         name: str = event.params.get("name", "")
         projects: str = event.params.get("projects", "")
 
