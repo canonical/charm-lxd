@@ -11,7 +11,7 @@ add-trusted-client:
         <Client cert in PEM format to add to trust>
         -----END CERTIFICATE-----
         Pass the file with the certificate above as:
-        $ juju run-action lxd/leader add-trusted-client cert="$(cat client.crt)"
+        $ juju run --wait=2m lxd/leader add-trusted-client cert="$(cat client.crt)"
       type: string
     cert-url:
       description: The HTTP/HTTPS URL to fetch the client certificate from (required if cert isn’t set)

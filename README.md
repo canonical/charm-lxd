@@ -69,7 +69,7 @@ A Ceph storage pool then needs to be created, first in Ceph and then in LXD. Her
 
 ```shell
 # create the pool on the Ceph cluster
-juju run-action --wait ceph-mon/leader create-pool name=foo app-name=lxd
+juju run --wait=2m ceph-mon/leader create-pool name=foo app-name=lxd
 
 # then on LXD depending on the mode= setting
 
