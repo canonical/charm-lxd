@@ -1564,9 +1564,9 @@ class LxdCharm(CharmBase):
             timeout=600,
         )
         if c.returncode != 0 or not c.stdout:
-            logger.debug(
+            logger.error(
                 f'The command "lxc cluster add {hostname}" did not produce '
-                f"any output (rc={c.returncode})"
+                f"any output (rc={c.returncode}, error={c.stderr})"
             )
             return ""
 
