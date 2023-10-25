@@ -22,7 +22,7 @@ At the end of a successful deployment, LXD will need to be configured to interac
 # remove the relation
 juju remove-relation lxd:grafana-dashboard grafana:dashboards
 # log to grafana using the admin password obtained with:
-juju run-action --wait grafana/leader get-admin-password
+juju run --wait=2m grafana/leader get-admin-password
 # delete the bogus LXD dashboard
 # recreate the relation
 juju add-relation lxd:grafana-dashboard grafana:dashboards
