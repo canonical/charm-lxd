@@ -33,5 +33,15 @@ get-client-token:
       description: A comma separated list of projects to restrict the client certificate to (optional)
       type: string
 
+remove-trusted-client:
+  description: The client certificate fingerprint (SHA256) to remove from the trusted list
+  params:
+    fingerprint:
+      description: |
+        The fingerprint of the X.509 PEM client certificate. This will automatically ignore
+        `openssl`'s unneeded prefix (`sha256 Fingerprint=`) and extract the fingerprint.
+        $ juju run --wait=2m lxd/leader remove-trusted-client fingerprint="$(openssl x509 -noout -fingerprint -sha256 -in client.crt)"
+      type: string
+
 show-pending-config:
   description: Show the currently pending configuration changes (queued for after the reboot)

@@ -114,6 +114,9 @@ class LxdCharm(CharmBase):
         self.framework.observe(self.on.debug_action, self._on_action_debug)
         self.framework.observe(self.on.get_client_token_action, self._on_action_get_client_token)
         self.framework.observe(
+            self.on.remove_trusted_client_action, self._on_action_remove_trusted_client
+        )
+        self.framework.observe(
             self.on.show_pending_config_action, self._on_action_show_pending_config
         )
 
@@ -412,6 +415,33 @@ class LxdCharm(CharmBase):
             event.set_results({"result": msg})
         else:
             msg = "Failed to get a client certificate add token"
+            event.fail(msg)
+            logger.error(msg)
+
+    def _on_action_remove_trusted_client(self, event: ActionEvent) -> None:
+        """Remove a client certificate from the trusted list."""
+        fingerprint: str = event.params.get("fingerprint", "")
+        if not fingerprint:
+            msg = "Missing required parameter: fingerprint"
+            event.fail(msg)
+            logger.error(msg)
+            return
+
+        # Remove any unneeded prefix `openssl` might have left and remove the
+        # colons to turn the fingerprint into a string of hex characters:
+        # "sha256 Fingerprint=EF:3B:F2:...:28:08:A6" => "EF3BF2...2808A6"
+        fingerprint = fingerprint.split("=")[-1].replace(":", "")
+        if len(fingerprint) != 64:
+            msg = "Invalid fingerprint"
+            event.fail(msg)
+            logger.error(msg)
+            return
+
+        if self.lxd_trust_remove(fingerprint):
+            msg = "The client certificate is no longer trusted"
+            event.set_results({"result": msg})
+        else:
+            msg = "The client certificate was not removed, see the logs for details"
             event.fail(msg)
             logger.error(msg)
 
