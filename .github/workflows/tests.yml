@@ -123,7 +123,7 @@ jobs:
           juju_wait
 
           # check that the client cert was not left behind
-          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
+          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
 
           # set the projects config and re-establish the relation
           juju config https-client projects="default"
@@ -139,7 +139,7 @@ jobs:
           # relation causing the removal of the cert
           juju remove-application https-client
           juju_wait
-          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
+          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
           juju status --relations
 
     - name: Test opening/closing ports
