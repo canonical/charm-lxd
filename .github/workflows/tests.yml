@@ -123,7 +123,7 @@ jobs:
           juju_wait
 
           # check that the client cert was not left behind
-          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
+          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
 
           # set the projects config and re-establish the relation
           juju config https-client projects="default"
@@ -139,7 +139,7 @@ jobs:
           # relation causing the removal of the cert
           juju remove-application https-client
           juju_wait
-          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
+          ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
           juju status --relations
 
     - name: Test opening/closing ports
@@ -167,10 +167,10 @@ jobs:
           juju wait-for application lxd --query='status=="active"'
           juju status
 
-    - name: Test add-trusted-client action
+    - name: Test add-trusted-client/remove-trusted-client actions
       run: |
           set -eux
-          CERT_NAME="add-trusted-client-$$"
+          CERT_NAME="trusted-client-$$"
 
           # Generate local cert/key
           rm -rf ~/snap/lxd/common/config/
@@ -181,6 +181,9 @@ jobs:
           # Confirm the user's cert was added to the trusted list
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
+          juju run --wait=2m lxd/leader remove-trusted-client fingerprint="$(openssl x509 -noout -fingerprint -sha256 -in ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is no longer trusted'
+          # Confirm the user's cert was removed from the trusted list
+          ! juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME}," || false
 
     - name: Cleanup standalone lxd units
       run: |
