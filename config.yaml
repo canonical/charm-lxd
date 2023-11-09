@@ -92,9 +92,6 @@ options:
     type: boolean
     description: Use snap-specific OVN configuration
     default: true
-  snap-config-shiftfs-enable:
-    type: string
-    description: Enable shiftfs support
 
   sysctl-tuning:
     type: boolean
