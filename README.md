@@ -88,6 +88,10 @@ lxc storage create remote ceph ceph.user.name=lxd
 
 In general, if something is doable by the LXD API, the charm won't replicate the feature to avoid duplication and other problems like desynchronisation between the charm's view and LXD's view. If however you find a feature that would be a worthwhile addition to the charm, please open an issue or send a pull request.
 
+## Supported LXD versions
+
+The charm only supports currently supported versions of LXD, including both long term support and feature releases.
+
 ## Known issues
 
 ### Cluster leader removal
