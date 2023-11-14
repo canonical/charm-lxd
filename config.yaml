@@ -95,6 +95,10 @@ options:
   snap-config-shiftfs-enable:
     type: string
     description: Enable shiftfs support
+  snap-config-ui-enable:
+    type: boolean
+    description: Enable the experimental web interface
+    default: false
 
   sysctl-tuning:
     type: boolean
