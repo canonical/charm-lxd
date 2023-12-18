@@ -70,7 +70,7 @@ jobs:
           sudo -g lxd lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty sudo -g lxd lxc delete --project charmcraft
 
     - name: Upload charms
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: charms
         path: ./*.charm
@@ -244,7 +244,7 @@ jobs:
 
     - name: Juju debug-log
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: juju-debug-logs ${{ github.job }}
         path: juju-debug.log
