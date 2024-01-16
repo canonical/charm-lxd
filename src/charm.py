@@ -297,7 +297,7 @@ class LxdCharm(CharmBase):
         try:
             with open(ca_file) as f:
                 return f.read()
-        except IOError as e:
+        except OSError as e:
             logger.error(f"Could not read {ca_file}: {e.strerror}")
             return ""
 
