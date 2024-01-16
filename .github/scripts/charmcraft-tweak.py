@@ -59,10 +59,10 @@ def rewrite_charmcraft(directory: str, unneeded_build_pkgs: list[str]) -> None:
     if not requirements_txt.exists():
         sys.exit("requirements.txt not found")
 
-    with open(charmcraft_yaml, "r") as f:
+    with open(charmcraft_yaml) as f:
         charmcraft = yaml.safe_load(f)
 
-    with open(requirements_txt, "r") as f:
+    with open(requirements_txt) as f:
         requirements = f.read().splitlines()
 
     # Ensure properly formatted charmcraft.yaml
@@ -72,7 +72,9 @@ def rewrite_charmcraft(directory: str, unneeded_build_pkgs: list[str]) -> None:
     # Remove unneeded build packages
     build_pkgs = charmcraft["parts"]["charm"].get("build-packages", [])
     if unneeded_build_pkgs and build_pkgs:
-        charmcraft["parts"]["charm"]["build-packages"] = [pkg for pkg in build_pkgs if pkg not in unneeded_build_pkgs]
+        charmcraft["parts"]["charm"]["build-packages"] = [
+            pkg for pkg in build_pkgs if pkg not in unneeded_build_pkgs
+        ]
 
     # Add requirements.txt as charm-binary-python-packages
     if "charm-binary-python-packages" not in charmcraft["parts"]["charm"]:
