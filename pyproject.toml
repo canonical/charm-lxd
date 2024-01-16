@@ -20,7 +20,7 @@ line-length = 99
 extend-exclude = ["lib/charms/"]
 
 [tool.ruff.lint]
-select = ["D", "E", "F", "N", "W"]
+select = ["D", "E", "F", "N", "UP", "W"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 99
