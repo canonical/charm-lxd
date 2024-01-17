@@ -297,7 +297,7 @@ class LxdCharm(CharmBase):
         try:
             with open(ca_file) as f:
                 return f.read()
-        except IOError as e:
+        except OSError as e:
             logger.error(f"Could not read {ca_file}: {e.strerror}")
             return ""
 
@@ -1357,7 +1357,8 @@ class LxdCharm(CharmBase):
             }
         )
         logger.debug(
-            f"Connection information put in {self.unit.name} (cms-client-bound-address={bound_address})"
+            f"Connection information put in {self.unit.name} "
+            "(cms-client-bound-address={bound_address})"
         )
 
     def _on_prometheus_manual_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -1801,7 +1802,8 @@ class LxdCharm(CharmBase):
                 }
             else:
                 logger.error(
-                    "Unable to obtain the server_name from the CA certificate, disabling TLS server verification"
+                    "Unable to obtain the server_name from the CA certificate, "
+                    "disabling TLS server verification"
                 )
                 tls_config["insecure_skip_verify"] = True
         else:
