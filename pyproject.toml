@@ -2,7 +2,7 @@
 name = "charm-lxd"
 description = "Charm for LXD"
 license = "Apache 2.0"
-python = "^3.8"
+requires-python = ">=3.8"
 readme = "README.md"
 homepage = "https://charmhub.io/lxd"
 repository = "https://github.com/canonical/charm-lxd"
