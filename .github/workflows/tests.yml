@@ -50,6 +50,8 @@ jobs:
           sudo snap install charmcraft --classic
           sudo snap install juju
 
+          snap list --all
+
     - name: Build charms
       run: |
           set -eux
