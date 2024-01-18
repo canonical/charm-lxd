@@ -50,6 +50,8 @@ jobs:
           sudo snap install charmcraft --classic
           sudo snap install juju
 
+          snap list --all
+
     - name: Build charms
       run: |
           set -eux
@@ -137,7 +139,7 @@ jobs:
 
           # removing the https-client application will break the
           # relation causing the removal of the cert
-          juju remove-application https-client
+          juju remove-application --no-prompt https-client
           juju_wait
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
           juju status --relations
@@ -188,7 +190,7 @@ jobs:
     - name: Cleanup standalone lxd units
       run: |
           set -eux
-          juju remove-application --force lxd
+          juju remove-application --no-prompt --force lxd
           sleep 10
           juju status
 
