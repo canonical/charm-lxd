@@ -129,7 +129,8 @@ class LxdCharm(CharmBase):
         # Relation event handlers
         self.framework.observe(self.on.ceph_relation_changed, self._on_ceph_relation_changed)
         self.framework.observe(
-            self.on.certificates_relation_changed, self._on_certificates_relation_changed
+            self.on.certificates_relation_changed,
+            self._on_certificates_relation_changed,
         )
         self.framework.observe(self.on.cluster_relation_changed, self._on_cluster_relation_changed)
         self.framework.observe(self.on.cluster_relation_created, self._on_cluster_relation_created)
@@ -137,7 +138,8 @@ class LxdCharm(CharmBase):
             self.on.cluster_relation_departed, self._on_cluster_relation_departed
         )
         self.framework.observe(
-            self.on.grafana_dashboard_relation_changed, self._on_grafana_dashboard_relation_changed
+            self.on.grafana_dashboard_relation_changed,
+            self._on_grafana_dashboard_relation_changed,
         )
         self.framework.observe(self.on.https_relation_broken, self._on_https_relation_broken)
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
@@ -154,20 +156,24 @@ class LxdCharm(CharmBase):
             self.on.ovsdb_cms_relation_changed, self._on_ovsdb_cms_relation_changed
         )
         self.framework.observe(
-            self.on.prometheus_manual_relation_changed, self._on_prometheus_manual_relation_changed
+            self.on.prometheus_manual_relation_changed,
+            self._on_prometheus_manual_relation_changed,
         )
         self.framework.observe(
             self.on.prometheus_manual_relation_departed,
             self._on_prometheus_manual_relation_departed,
         )
         self.framework.observe(
-            self.on.metrics_endpoint_relation_changed, self._on_metrics_endpoint_relation_changed
+            self.on.metrics_endpoint_relation_changed,
+            self._on_metrics_endpoint_relation_changed,
         )
         self.framework.observe(
-            self.on.metrics_endpoint_relation_created, self._on_metrics_endpoint_relation_created
+            self.on.metrics_endpoint_relation_created,
+            self._on_metrics_endpoint_relation_created,
         )
         self.framework.observe(
-            self.on.metrics_endpoint_relation_departed, self._on_metrics_endpoint_relation_departed
+            self.on.metrics_endpoint_relation_departed,
+            self._on_metrics_endpoint_relation_departed,
         )
 
     @property
@@ -621,7 +627,7 @@ class LxdCharm(CharmBase):
 
             if k.startswith("lxd-"):
                 logger.warning(
-                    f"The new {k!r} key won\'t be applied to existing units "
+                    f"The new {k!r} key won't be applied to existing units "
                     "as their LXD is already initialized"
                 )
                 self._stored.config[k] = v
@@ -1576,7 +1582,10 @@ class LxdCharm(CharmBase):
                 f.write("\n".join(SYSTEMD_TMPFILES_CONFIGS) + "\n")
             try:
                 subprocess.run(
-                    ["systemd-tmpfiles", "--create"], capture_output=True, check=True, timeout=600
+                    ["systemd-tmpfiles", "--create"],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
@@ -1660,7 +1669,10 @@ class LxdCharm(CharmBase):
         self.unit_maintenance("Joining cluster")
         try:
             subprocess.run(
-                ["lxd", "init", "--preseed"], check=True, input=preseed_yaml, timeout=600
+                ["lxd", "init", "--preseed"],
+                check=True,
+                input=preseed_yaml,
+                timeout=600,
             )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
@@ -2157,7 +2169,9 @@ class LxdCharm(CharmBase):
             )
             mon.start()
             subprocess.run(
-                ["systemctl", "reload", "snap.lxd.daemon.service"], capture_output=True, check=True
+                ["systemctl", "reload", "snap.lxd.daemon.service"],
+                capture_output=True,
+                check=True,
             )
             mon.join(timeout=600.0)
 
@@ -2490,7 +2504,10 @@ class LxdCharm(CharmBase):
             )
             if os.path.exists("/var/lib/lxd"):
                 subprocess.run(
-                    ["lxd.migrate", "-yes"], capture_output=True, check=True, timeout=600
+                    ["lxd.migrate", "-yes"],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
                 )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
