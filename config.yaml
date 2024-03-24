@@ -45,8 +45,8 @@ options:
 
   snap-channel:
     type: string
-    default: "latest/stable"
-    description: The snap store channel for LXD to use
+    default: "auto"
+    description: The snap store channel for LXD to use or `auto` to use `lxd-installer` if available with a fallback to the default channel
 
   snap-config-ceph-builtin:
     type: boolean
