@@ -379,12 +379,12 @@ class LxdCharm(CharmBase):
         try:
             b = subprocess.run(["lxd.buginfo"], capture_output=True, check=True, timeout=600)
         except subprocess.CalledProcessError as e:
-            msg = f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})'
+            msg = f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})"
             event.fail(msg)
             logger.error(msg)
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            msg = f'Timeout exceeded while running "{e.cmd}"'
+            msg = f"Timeout exceeded while running {e.cmd!r}"
             event.fail(msg)
             logger.error(msg)
             raise RuntimeError
@@ -621,7 +621,7 @@ class LxdCharm(CharmBase):
 
             if k.startswith("lxd-"):
                 logger.warning(
-                    f'The new "{k}" key won\'t be applied to existing units '
+                    f"The new {k!r} key won\'t be applied to existing units "
                     "as their LXD is already initialized"
                 )
                 self._stored.config[k] = v
@@ -1546,14 +1546,14 @@ class LxdCharm(CharmBase):
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
-                    self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                    self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
                     raise RuntimeError
                 else:
                     self.unit_maintenance(
-                        f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
+                        f"Ignoring failed execution of {e.cmd!r} due to being inside a container"
                     )
             except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
                 raise RuntimeError
 
         elif os.path.exists(sysctl_file):
@@ -1580,14 +1580,14 @@ class LxdCharm(CharmBase):
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
-                    self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                    self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
                     raise RuntimeError
                 else:
                     self.unit_maintenance(
-                        f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
+                        f"Ignoring failed execution of {e.cmd!r} due to being inside a container"
                     )
             except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
                 raise RuntimeError
 
         elif os.path.exists(systemd_tmpfiles):
@@ -1663,7 +1663,7 @@ class LxdCharm(CharmBase):
                 ["lxd", "init", "--preseed"], check=True, input=preseed_yaml, timeout=600
             )
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
 
             # Leave a copy of the YAML preseed that didn't work
             handle, tmp_file = tempfile.mkstemp()
@@ -1672,7 +1672,7 @@ class LxdCharm(CharmBase):
             logger.error(f"The YAML preseed that caused a failure was saved to {tmp_file}")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            logger.error(f'Timeout exceeded while running "{e.cmd}"')
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
         self.unit_active()
@@ -1740,10 +1740,10 @@ class LxdCharm(CharmBase):
                 timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             return ("", "")
         except subprocess.TimeoutExpired as e:
-            logger.error(f'Timeout exceeded while running "{e.cmd}"')
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
             return ("", "")
 
         # The key data was output to stdout and never touched the disk
@@ -1983,10 +1983,10 @@ class LxdCharm(CharmBase):
                     timeout=600,
                 )
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
                 raise RuntimeError
             except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
                 raise RuntimeError
         else:
             self.unit_maintenance("Performing initial configuration")
@@ -2169,7 +2169,7 @@ class LxdCharm(CharmBase):
                 raise RuntimeError
 
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
 
     def lxd_set_address(self, listener: str, addr: str) -> bool:
@@ -2226,10 +2226,10 @@ class LxdCharm(CharmBase):
                 timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             return False
         except subprocess.TimeoutExpired as e:
-            logger.error(f'Timeout exceeded while running "{e.cmd}"')
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
             return False
 
         # Save the addr instead of the socket because it makes it easier
@@ -2436,10 +2436,10 @@ class LxdCharm(CharmBase):
                 timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
         # If "snap set lxd" was successful: save all the k/v applied
@@ -2493,10 +2493,10 @@ class LxdCharm(CharmBase):
                     ["lxd.migrate", "-yes"], capture_output=True, check=True, timeout=600
                 )
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
         # Done with the snap installation
@@ -2530,10 +2530,10 @@ class LxdCharm(CharmBase):
             if enable:
                 subprocess.run(enable, capture_output=True, check=True, timeout=600)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
     def snap_sideload_lxd_binary(self) -> None:
