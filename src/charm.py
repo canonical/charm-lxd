@@ -2469,13 +2469,40 @@ class LxdCharm(CharmBase):
             self.system_set_reboot_required()
 
     def snap_install_lxd(self) -> None:
-        """Install LXD from snap."""
-        channel = self.config["snap-channel"]
-        if channel:
-            channel_name = channel
+        """Install LXD from snap.
+
+        If snap-channel is set to auto, try to use the lxd-installer if available and
+        fallback to the default channel.
+
+        If a specific snap-channel is requested, use it.
+        """
+        snap_channel: str = self.config["snap-channel"]
+
+        # When snap-channel is set to auto, try to use the lxd-installer
+        # if available and fallback to the default track.
+
+        # The `lxd-installer` provides 2 shell wrappers: `/usr/sbin/lxd` and
+        # `/usr/sbin/lxc` which are nutshells to trigger a `snap install lxd
+        # --channel <proper-channel>`.
+        #
+        # If `which lxd` doesn't find the real snap provided `lxd``, but still
+        # finds something, assume it found the `lxd-installer` wrapper that can
+        # then be used.
+        #
+        # If `lxd-installer` is not available, a simple `snap install lxd` is
+        # used. This will then pull LXD from the default track which is soon to
+        # be `5.21/stable` (as of 2024-03-23).
+
+        channel: List[str] = []
+        if snap_channel == "auto":
+            lxd_path: str = shutil.which("lxd") or ""
+            if not lxd_path or lxd_path == "/snap/bin/lxd":
+                logger.debug(
+                    "snap-channel auto requested but lxd-installer not found, falling"
+                    " back to default channel"
+                )
         else:
-            channel_name = "latest/stable"
-        self.unit_maintenance(f"Installing LXD snap (channel={channel_name})")
+            channel = [f"--channel={snap_channel}"]
 
         # During the install phase, there won't be anything in self._stored.config
         # so fallback to the live configuration
@@ -2490,18 +2517,35 @@ class LxdCharm(CharmBase):
             cohort = ["--cohort=+"]
 
         try:
-            subprocess.run(
-                ["snap", "install", "lxd", f"--channel={channel}"] + cohort,
-                capture_output=True,
-                check=True,
-                timeout=600,
-            )
-            subprocess.run(
-                ["snap", "refresh", "lxd", f"--channel={channel}"] + cohort,
-                capture_output=True,
-                check=True,
-                timeout=600,
-            )
+            if channel:
+                self.unit_maintenance(f"Installing LXD snap (channel={snap_channel})")
+                subprocess.run(
+                    ["snap", "install", "lxd"] + channel + cohort,
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
+                )
+                subprocess.run(
+                    ["snap", "refresh", "lxd"] + channel + cohort,
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
+                )
+            else:
+                self.unit_maintenance("Installing LXD snap (using lxd-installer)")
+                subprocess.run(
+                    ["lxd", "version"],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
+                )
+                if cohort:
+                    subprocess.run(
+                        ["snap", "switch", "lxd"] + cohort,
+                        capture_output=True,
+                        check=True,
+                        timeout=600,
+                    )
             if os.path.exists("/var/lib/lxd"):
                 subprocess.run(
                     ["lxd.migrate", "-yes"],
@@ -2517,7 +2561,7 @@ class LxdCharm(CharmBase):
             raise RuntimeError
 
         # Done with the snap installation
-        self._stored.config["snap-channel"] = channel
+        self._stored.config["snap-channel"] = snap_channel
 
     def snap_sideload_lxd(self) -> None:
         """Sideload LXD snap resource."""
@@ -2530,8 +2574,11 @@ class LxdCharm(CharmBase):
         # A 0 byte file will unload the resource
         if os.path.getsize(self._stored.lxd_snap_path) == 0:
             logger.debug("Reverting to LXD snap from snapstore")
-            channel: str = self._stored.config["snap-channel"]
-            cmd = ["snap", "refresh", "lxd", f"--channel={channel}", "--amend"]
+            snap_channel: str = self._stored.config["snap-channel"]
+            channel: List[str] = []
+            if snap_channel != "auto":
+                channel = [f"--channel={snap_channel}"]
+            cmd = ["snap", "refresh", "lxd", "--amend"] + channel
         else:
             logger.debug("Sideloading LXD snap")
             cmd = ["snap", "install", "--dangerous", self._stored.lxd_snap_path]
