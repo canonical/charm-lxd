@@ -1116,6 +1116,23 @@ class LxdCharm(CharmBase):
 
         projects = d.get("projects", "")
 
+        client = pylxd.Client()
+        host_env = client.host_info["environment"]
+
+        # With LXD 4.0, `lxc config trust list --format csv` does not show the
+        # certificate name provided when adding the certificate. This prevents
+        # the charm from adding the `juju-relation-` prefix that is required to
+        # later remove the certificate when the relation is broken. Because of
+        # this, the charm will refuse to add the certificate if the LXD is too
+        # old to allow proper trust management.
+        server_major_version: int = int(host_env["server_version"].split(".", 1)[0])
+        if server_major_version < 5:
+            logger.error(
+                "LXD version is too old to allow proper trust management,"
+                " suggestion: switch to LXD 5.0 or newer"
+            )
+            return
+
         # Only add the cert if not already trusted
         cert_name = f"juju-relation-{bag.name}"
         if not self.lxd_trust_fingerprint(cert_name):
@@ -1133,8 +1150,6 @@ class LxdCharm(CharmBase):
         else:
             logger.debug(f"The client certificate ({cert_name=}) was already trusted")
 
-        client = pylxd.Client()
-        host_env = client.host_info["environment"]
         addresses_list: List[str] = []
         if host_env["server_clustered"]:
             for member in client.cluster.members.all():
