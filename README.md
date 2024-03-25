@@ -18,10 +18,10 @@ Follow `Juju`'s [Charmed Operator Lifecycle Manager](https://juju.is/docs/olm) t
 juju deploy ch:lxd
 ```
 
-Or for a set of 4 units using the `4.0/stable` snap with the HTTPS listener enabled:
+Or for a set of 4 units using the `5.0/stable` snap with the HTTPS listener enabled:
 
 ```shell
-juju deploy ch:lxd --num-units 4 --config snap-channel="4.0/stable" --config lxd-listen-https=true
+juju deploy ch:lxd --num-units 4 --config snap-channel="5.0/stable" --config lxd-listen-https=true
 ```
 
 Or a unit using local storage as `ZFS` storage backend:
