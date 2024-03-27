@@ -65,10 +65,10 @@ jobs:
 
           sudo -g lxd charmcraft pack -v
 
-          # ancillary charm for testing purposes
+          echo "==> ancillary charm for testing purposes"
           sudo -g lxd charmcraft pack -v --project-dir examples/https-client
 
-          # cleanup project to reclaim space
+          echo "==> cleanup project to reclaim space"
           sudo -g lxd lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty sudo -g lxd lxc delete --project charmcraft
 
     - name: Upload charms
@@ -109,36 +109,38 @@ jobs:
           juju add-model ci-testing
           juju model-config logging-config="<root>=WARNING;unit=DEBUG"
 
-          # Test 20.04 charm in standalone mode
-          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config lxd-listen-https=true
+          echo "==> Test 20.04 charm in standalone mode"
+          juju deploy ./lxd_ubuntu-20.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
           juju deploy ./https-client_ubuntu-22.04-amd64.charm
           juju relate https-client lxd
           juju_wait
 
           juju status --relations
 
-          # confirm lxd now trusts the client cert
+          echo "==> list trusted client certs"
+          juju exec --unit lxd/leader -- lxc config trust list --format csv
+
+          echo "==> confirm lxd now trusts the client cert"
           juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+,"
 
-          # break the relationship to have the client cert removed
+          echo "==> break the relationship to have the client cert removed"
           juju remove-relation https-client lxd
           juju_wait
 
-          # check that the client cert was not left behind
+          echo "==> check that the client cert was not left behind"
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
 
-          # set the projects config and re-establish the relation
+          echo "==> set the projects config and re-establish the relation"
           juju config https-client projects="default"
           juju relate https-client lxd
           juju_wait
 
-          # check that the client cert is now restricted
+          echo "==> check that the client cert is now restricted"
           FINGERPRINT="$(juju exec --unit lxd/leader -- lxc config trust list --format csv | awk -F, '/,juju-relation-https-client/ {print $4}')"
           juju exec --unit lxd/leader -- lxc config trust show "$FINGERPRINT"
           juju exec --unit lxd/leader -- lxc config trust show "$FINGERPRINT" | grep -xF 'restricted: true'
 
-          # removing the https-client application will break the
-          # relation causing the removal of the cert
+          echo "==> removing the https-client application will break the relation causing the removal of the cert"
           juju remove-application --no-prompt https-client
           juju_wait
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
@@ -147,24 +149,25 @@ jobs:
     - name: Test opening/closing ports
       run: |
           set -eux
-          # open the dns, bgp and metrics ports
+          echo "==> open the dns, bgp and metrics ports"
           juju config lxd lxd-listen-dns=true lxd-listen-bgp=true lxd-listen-metrics=true
           juju wait-for application lxd --query='status=="active"'
           juju status
-          # check that the dns, bgp, https and metrics ports are opened
+          echo "==> check that the dns, bgp, https and metrics ports are opened"
           OPENED_PORTS="$(juju exec --unit lxd/leader "opened-ports" | grep -cE '^(53|179|8443|9100)/tcp$')"
           [ "$OPENED_PORTS" -eq 4 ]
-          # close the dns, bgp and metrics ports
+          echo "==> close the dns, bgp and metrics ports"
           juju config lxd lxd-listen-dns=false lxd-listen-bgp=false lxd-listen-metrics=false
           juju wait-for application lxd --query='status=="active"'
           juju status
-          # check that only the https port remains opened
+          echo "==> check that only the https port remains opened"
           HTTPS_PORT="$(juju exec --unit lxd/leader "opened-ports" | grep -E '^[0-9]+/tcp$')"
           [ "$HTTPS_PORT" = "8443/tcp" ]
 
     - name: Scale the number of lxd units
       run: |
           set -eux
+          echo "==> Add a LXD unit"
           juju add-unit lxd
           juju wait-for application lxd --query='status=="active"'
           juju status
@@ -174,17 +177,19 @@ jobs:
           set -eux
           CERT_NAME="trusted-client-$$"
 
-          # Generate local cert/key
+          echo "==> Generate local cert/key"
           rm -rf ~/snap/lxd/common/config/
           lxc remote add localhost --accept-certificate --password=abc 2>/dev/null || true
 
+          echo "==> Add trusted client cert"
           juju run --wait=2m lxd/leader add-trusted-client name="$CERT_NAME" cert="$(cat ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is now trusted'
 
-          # Confirm the user's cert was added to the trusted list
+          echo "==> Confirm the user's cert was added to the trusted list"
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
+          echo "==> Remove trusted client cert"
           juju run --wait=2m lxd/leader remove-trusted-client fingerprint="$(openssl x509 -noout -fingerprint -sha256 -in ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is no longer trusted'
-          # Confirm the user's cert was removed from the trusted list
+          echo "==> Confirm the user's cert was removed from the trusted list"
           ! juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME}," || false
 
     - name: Cleanup standalone lxd units
@@ -211,12 +216,13 @@ jobs:
           }
           trap debug err exit
 
-          # Test 22.04 charm in cluster mode
+          echo "==> Test 22.04 charm in cluster mode"
           NODE_CREATED="3"
           juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
           juju wait-for application lxd --query='life=="alive" && status=="available" && forEach(units, unit => unit.life=="alive")' || true  # wait for leader-election
           juju status --relations
 
+          echo "==> Check that all members are online and fully operational"
           NODE_JOINED="$(juju exec --unit lxd/leader -- lxc cluster list --format csv | grep -cF ',ONLINE,Fully operational')"
           [ "$NODE_JOINED" -eq "$NODE_CREATED" ]
 
@@ -226,13 +232,14 @@ jobs:
           CERT_NAME="get-client-token-$$"
           REMOTE_NAME="rmt-$$"
 
+          echo "==> Obtain a client-token"
           token="$(juju run --wait=2m lxd/leader get-client-token name="$CERT_NAME" | sed -n '/^\s\+Client [^ ]\+ certificate add token:$/,+1 p' | sed '/^\s\+Client /d; s/^\s\+//')"
           lxc remote add "$REMOTE_NAME" "$token"
 
-          # Test the newly added remote
+          echo "==> Test the newly added remote"
           lxc config show "$REMOTE_NAME":
 
-          # Confirm the user's cert was added to the trusted list
+          echo "==> Confirm the user's cert was added to the trusted list"
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
     - name: Check for errors

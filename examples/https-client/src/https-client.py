@@ -66,7 +66,7 @@ class HttpsClientCharm(CharmBase):
         try:
             subprocess.run(cmd, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             return
 
     @property

@@ -129,7 +129,8 @@ class LxdCharm(CharmBase):
         # Relation event handlers
         self.framework.observe(self.on.ceph_relation_changed, self._on_ceph_relation_changed)
         self.framework.observe(
-            self.on.certificates_relation_changed, self._on_certificates_relation_changed
+            self.on.certificates_relation_changed,
+            self._on_certificates_relation_changed,
         )
         self.framework.observe(self.on.cluster_relation_changed, self._on_cluster_relation_changed)
         self.framework.observe(self.on.cluster_relation_created, self._on_cluster_relation_created)
@@ -137,7 +138,8 @@ class LxdCharm(CharmBase):
             self.on.cluster_relation_departed, self._on_cluster_relation_departed
         )
         self.framework.observe(
-            self.on.grafana_dashboard_relation_changed, self._on_grafana_dashboard_relation_changed
+            self.on.grafana_dashboard_relation_changed,
+            self._on_grafana_dashboard_relation_changed,
         )
         self.framework.observe(self.on.https_relation_broken, self._on_https_relation_broken)
         self.framework.observe(self.on.https_relation_changed, self._on_https_relation_changed)
@@ -154,20 +156,24 @@ class LxdCharm(CharmBase):
             self.on.ovsdb_cms_relation_changed, self._on_ovsdb_cms_relation_changed
         )
         self.framework.observe(
-            self.on.prometheus_manual_relation_changed, self._on_prometheus_manual_relation_changed
+            self.on.prometheus_manual_relation_changed,
+            self._on_prometheus_manual_relation_changed,
         )
         self.framework.observe(
             self.on.prometheus_manual_relation_departed,
             self._on_prometheus_manual_relation_departed,
         )
         self.framework.observe(
-            self.on.metrics_endpoint_relation_changed, self._on_metrics_endpoint_relation_changed
+            self.on.metrics_endpoint_relation_changed,
+            self._on_metrics_endpoint_relation_changed,
         )
         self.framework.observe(
-            self.on.metrics_endpoint_relation_created, self._on_metrics_endpoint_relation_created
+            self.on.metrics_endpoint_relation_created,
+            self._on_metrics_endpoint_relation_created,
         )
         self.framework.observe(
-            self.on.metrics_endpoint_relation_departed, self._on_metrics_endpoint_relation_departed
+            self.on.metrics_endpoint_relation_departed,
+            self._on_metrics_endpoint_relation_departed,
         )
 
     @property
@@ -379,12 +385,12 @@ class LxdCharm(CharmBase):
         try:
             b = subprocess.run(["lxd.buginfo"], capture_output=True, check=True, timeout=600)
         except subprocess.CalledProcessError as e:
-            msg = f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})'
+            msg = f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})"
             event.fail(msg)
             logger.error(msg)
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            msg = f'Timeout exceeded while running "{e.cmd}"'
+            msg = f"Timeout exceeded while running {e.cmd!r}"
             event.fail(msg)
             logger.error(msg)
             raise RuntimeError
@@ -621,7 +627,7 @@ class LxdCharm(CharmBase):
 
             if k.startswith("lxd-"):
                 logger.warning(
-                    f'The new "{k}" key won\'t be applied to existing units '
+                    f"The new {k!r} key won't be applied to existing units "
                     "as their LXD is already initialized"
                 )
                 self._stored.config[k] = v
@@ -1110,6 +1116,23 @@ class LxdCharm(CharmBase):
 
         projects = d.get("projects", "")
 
+        client = pylxd.Client()
+        host_env = client.host_info["environment"]
+
+        # With LXD 4.0, `lxc config trust list --format csv` does not show the
+        # certificate name provided when adding the certificate. This prevents
+        # the charm from adding the `juju-relation-` prefix that is required to
+        # later remove the certificate when the relation is broken. Because of
+        # this, the charm will refuse to add the certificate if the LXD is too
+        # old to allow proper trust management.
+        server_major_version: int = int(host_env["server_version"].split(".", 1)[0])
+        if server_major_version < 5:
+            logger.error(
+                "LXD version is too old to allow proper trust management,"
+                " suggestion: switch to LXD 5.0 or newer"
+            )
+            return
+
         # Only add the cert if not already trusted
         cert_name = f"juju-relation-{bag.name}"
         if not self.lxd_trust_fingerprint(cert_name):
@@ -1127,8 +1150,6 @@ class LxdCharm(CharmBase):
         else:
             logger.debug(f"The client certificate ({cert_name=}) was already trusted")
 
-        client = pylxd.Client()
-        host_env = client.host_info["environment"]
         addresses_list: List[str] = []
         if host_env["server_clustered"]:
             for member in client.cluster.members.all():
@@ -1546,14 +1567,14 @@ class LxdCharm(CharmBase):
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
-                    self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                    self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
                     raise RuntimeError
                 else:
                     self.unit_maintenance(
-                        f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
+                        f"Ignoring failed execution of {e.cmd!r} due to being inside a container"
                     )
             except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
                 raise RuntimeError
 
         elif os.path.exists(sysctl_file):
@@ -1576,18 +1597,21 @@ class LxdCharm(CharmBase):
                 f.write("\n".join(SYSTEMD_TMPFILES_CONFIGS) + "\n")
             try:
                 subprocess.run(
-                    ["systemd-tmpfiles", "--create"], capture_output=True, check=True, timeout=600
+                    ["systemd-tmpfiles", "--create"],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
-                    self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                    self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
                     raise RuntimeError
                 else:
                     self.unit_maintenance(
-                        f'Ignoring failed execution of "{e.cmd}" due to being inside a container'
+                        f"Ignoring failed execution of {e.cmd!r} due to being inside a container"
                     )
             except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
                 raise RuntimeError
 
         elif os.path.exists(systemd_tmpfiles):
@@ -1660,10 +1684,13 @@ class LxdCharm(CharmBase):
         self.unit_maintenance("Joining cluster")
         try:
             subprocess.run(
-                ["lxd", "init", "--preseed"], check=True, input=preseed_yaml, timeout=600
+                ["lxd", "init", "--preseed"],
+                check=True,
+                input=preseed_yaml,
+                timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
 
             # Leave a copy of the YAML preseed that didn't work
             handle, tmp_file = tempfile.mkstemp()
@@ -1672,7 +1699,7 @@ class LxdCharm(CharmBase):
             logger.error(f"The YAML preseed that caused a failure was saved to {tmp_file}")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            logger.error(f'Timeout exceeded while running "{e.cmd}"')
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
         self.unit_active()
@@ -1740,10 +1767,10 @@ class LxdCharm(CharmBase):
                 timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             return ("", "")
         except subprocess.TimeoutExpired as e:
-            logger.error(f'Timeout exceeded while running "{e.cmd}"')
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
             return ("", "")
 
         # The key data was output to stdout and never touched the disk
@@ -1983,10 +2010,10 @@ class LxdCharm(CharmBase):
                     timeout=600,
                 )
             except subprocess.CalledProcessError as e:
-                self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+                self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
                 raise RuntimeError
             except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
                 raise RuntimeError
         else:
             self.unit_maintenance("Performing initial configuration")
@@ -2157,7 +2184,9 @@ class LxdCharm(CharmBase):
             )
             mon.start()
             subprocess.run(
-                ["systemctl", "reload", "snap.lxd.daemon.service"], capture_output=True, check=True
+                ["systemctl", "reload", "snap.lxd.daemon.service"],
+                capture_output=True,
+                check=True,
             )
             mon.join(timeout=600.0)
 
@@ -2169,7 +2198,7 @@ class LxdCharm(CharmBase):
                 raise RuntimeError
 
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
 
     def lxd_set_address(self, listener: str, addr: str) -> bool:
@@ -2226,10 +2255,10 @@ class LxdCharm(CharmBase):
                 timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            logger.error(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             return False
         except subprocess.TimeoutExpired as e:
-            logger.error(f'Timeout exceeded while running "{e.cmd}"')
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
             return False
 
         # Save the addr instead of the socket because it makes it easier
@@ -2436,10 +2465,10 @@ class LxdCharm(CharmBase):
                 timeout=600,
             )
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
         # If "snap set lxd" was successful: save all the k/v applied
@@ -2455,13 +2484,40 @@ class LxdCharm(CharmBase):
             self.system_set_reboot_required()
 
     def snap_install_lxd(self) -> None:
-        """Install LXD from snap."""
-        channel = self.config["snap-channel"]
-        if channel:
-            channel_name = channel
+        """Install LXD from snap.
+
+        If snap-channel is set to auto, try to use the lxd-installer if available and
+        fallback to the default channel.
+
+        If a specific snap-channel is requested, use it.
+        """
+        snap_channel: str = self.config["snap-channel"]
+
+        # When snap-channel is set to auto, try to use the lxd-installer
+        # if available and fallback to the default track.
+
+        # The `lxd-installer` provides 2 shell wrappers: `/usr/sbin/lxd` and
+        # `/usr/sbin/lxc` which are nutshells to trigger a `snap install lxd
+        # --channel <proper-channel>`.
+        #
+        # If `which lxd` doesn't find the real snap provided `lxd``, but still
+        # finds something, assume it found the `lxd-installer` wrapper that can
+        # then be used.
+        #
+        # If `lxd-installer` is not available, a simple `snap install lxd` is
+        # used. This will then pull LXD from the default track which is soon to
+        # be `5.21/stable` (as of 2024-03-23).
+
+        channel: List[str] = []
+        if snap_channel == "auto":
+            lxd_path: str = shutil.which("lxd") or ""
+            if not lxd_path or lxd_path == "/snap/bin/lxd":
+                logger.debug(
+                    "snap-channel auto requested but lxd-installer not found, falling"
+                    " back to default channel"
+                )
         else:
-            channel_name = "latest/stable"
-        self.unit_maintenance(f"Installing LXD snap (channel={channel_name})")
+            channel = [f"--channel={snap_channel}"]
 
         # During the install phase, there won't be anything in self._stored.config
         # so fallback to the live configuration
@@ -2476,31 +2532,51 @@ class LxdCharm(CharmBase):
             cohort = ["--cohort=+"]
 
         try:
-            subprocess.run(
-                ["snap", "install", "lxd", f"--channel={channel}"] + cohort,
-                capture_output=True,
-                check=True,
-                timeout=600,
-            )
-            subprocess.run(
-                ["snap", "refresh", "lxd", f"--channel={channel}"] + cohort,
-                capture_output=True,
-                check=True,
-                timeout=600,
-            )
+            if channel:
+                self.unit_maintenance(f"Installing LXD snap (channel={snap_channel})")
+                subprocess.run(
+                    ["snap", "install", "lxd"] + channel + cohort,
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
+                )
+                subprocess.run(
+                    ["snap", "refresh", "lxd"] + channel + cohort,
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
+                )
+            else:
+                self.unit_maintenance("Installing LXD snap (using lxd-installer)")
+                subprocess.run(
+                    ["lxd", "version"],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
+                )
+                if cohort:
+                    subprocess.run(
+                        ["snap", "switch", "lxd"] + cohort,
+                        capture_output=True,
+                        check=True,
+                        timeout=600,
+                    )
             if os.path.exists("/var/lib/lxd"):
                 subprocess.run(
-                    ["lxd.migrate", "-yes"], capture_output=True, check=True, timeout=600
+                    ["lxd.migrate", "-yes"],
+                    capture_output=True,
+                    check=True,
+                    timeout=600,
                 )
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
         # Done with the snap installation
-        self._stored.config["snap-channel"] = channel
+        self._stored.config["snap-channel"] = snap_channel
 
     def snap_sideload_lxd(self) -> None:
         """Sideload LXD snap resource."""
@@ -2513,8 +2589,11 @@ class LxdCharm(CharmBase):
         # A 0 byte file will unload the resource
         if os.path.getsize(self._stored.lxd_snap_path) == 0:
             logger.debug("Reverting to LXD snap from snapstore")
-            channel: str = self._stored.config["snap-channel"]
-            cmd = ["snap", "refresh", "lxd", f"--channel={channel}", "--amend"]
+            snap_channel: str = self._stored.config["snap-channel"]
+            channel: List[str] = []
+            if snap_channel != "auto":
+                channel = [f"--channel={snap_channel}"]
+            cmd = ["snap", "refresh", "lxd", "--amend"] + channel
         else:
             logger.debug("Sideloading LXD snap")
             cmd = ["snap", "install", "--dangerous", self._stored.lxd_snap_path]
@@ -2530,10 +2609,10 @@ class LxdCharm(CharmBase):
             if enable:
                 subprocess.run(enable, capture_output=True, check=True, timeout=600)
         except subprocess.CalledProcessError as e:
-            self.unit_blocked(f'Failed to run "{e.cmd}": {e.stderr} ({e.returncode})')
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
         except subprocess.TimeoutExpired as e:
-            self.unit_blocked(f'Timeout exceeded while running "{e.cmd}"')
+            self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
 
     def snap_sideload_lxd_binary(self) -> None:

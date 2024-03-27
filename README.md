@@ -18,10 +18,10 @@ Follow `Juju`'s [Charmed Operator Lifecycle Manager](https://juju.is/docs/olm) t
 juju deploy ch:lxd
 ```
 
-Or for a set of 4 units using the `4.0/stable` snap with the HTTPS listener enabled:
+Or for a set of 4 units using the `5.0/stable` snap with the HTTPS listener enabled:
 
 ```shell
-juju deploy ch:lxd --num-units 4 --config snap-channel="4.0/stable" --config lxd-listen-https=true
+juju deploy ch:lxd --num-units 4 --config snap-channel="5.0/stable" --config lxd-listen-https=true
 ```
 
 Or a unit using local storage as `ZFS` storage backend:
@@ -90,9 +90,13 @@ In general, if something is doable by the LXD API, the charm won't replicate the
 
 ## Supported LXD versions
 
-The charm only supports currently supported versions of LXD, including both long term support and feature releases.
+The charm only supports currently supported versions of LXD, including both long term support and feature releases. Please see the known issues section below.
 
 ## Known issues
+
+### LXD 4.0 does not support the `https` relation
+
+With LXD 4.0, `lxc config trust list --format csv` does not show the certificate name provided when adding the certificate. This prevents the charm from adding the `juju-relation-` prefix that is required to later remove the certificate when the relation is broken. Because of this, the charm will refuse to add the certificate if the LXD is too old to allow proper trust management.
 
 ### Cluster leader removal
 
