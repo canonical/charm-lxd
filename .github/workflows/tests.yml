@@ -216,9 +216,9 @@ jobs:
           }
           trap debug err exit
 
-          echo "==> Test 22.04 charm in cluster mode"
+          echo "==> Test 24.04 charm in cluster mode"
           NODE_CREATED="3"
-          juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
+          juju deploy ./lxd_ubuntu-24.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
           juju wait-for application lxd --query='life=="alive" && status=="available" && forEach(units, unit => unit.life=="alive")' || true  # wait for leader-election
           juju status --relations
 
