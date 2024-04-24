@@ -64,13 +64,13 @@ jobs:
           ./.github/scripts/charmcraft-tweak.py . "cargo,libffi-dev,libssl-dev,pkg-config,python3-dev,rustc"
           ./.github/scripts/charmcraft-tweak.py examples/https-client/ "cargo,libffi-dev,libssl-dev,pkg-config,python3-dev,rustc"
 
-          sudo -g lxd charmcraft pack -v
+          charmcraft pack -v
 
           echo "==> ancillary charm for testing purposes"
-          sudo -g lxd charmcraft pack -v --project-dir examples/https-client
+          charmcraft pack -v --project-dir examples/https-client
 
           echo "==> cleanup project to reclaim space"
-          sudo -g lxd lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty sudo -g lxd lxc delete --project charmcraft
+          lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty lxc delete --project charmcraft
 
     - name: Upload charms
       uses: actions/upload-artifact@v4
@@ -81,8 +81,8 @@ jobs:
     - name: Bootstrap Juju
       run: |
           set -eux
-          sudo -g lxd lxc network set lxdbr0 ipv6.address=none
-          sudo -g lxd juju bootstrap lxd local
+          lxc network set lxdbr0 ipv6.address=none
+          juju bootstrap lxd local
 
     - name: Exercice lxd-https relation
       run: |
