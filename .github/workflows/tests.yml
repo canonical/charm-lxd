@@ -43,7 +43,7 @@ jobs:
       run: |
           set -x
 
-          sudo apt-get autopurge moby-containerd docker uidmap -y
+          sudo apt-get autopurge -y containerd.io docker-ce podman uidmap
           sudo ip link delete docker0
           sudo nft flush ruleset
 
