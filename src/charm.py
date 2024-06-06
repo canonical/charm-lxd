@@ -523,7 +523,7 @@ class LxdCharm(CharmBase):
             elif [k for k in changed if k.startswith("snap-config-")]:
                 self.snap_config_set()
         except RuntimeError:
-            msg = "Failed to apply some configuration change(s): %s" % ", ".join(changed)
+            msg = "Failed to apply some configuration change(s): {}".format(", ".join(changed))
             self.unit_blocked(msg)
             event.defer()
             return
