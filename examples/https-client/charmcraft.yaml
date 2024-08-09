@@ -1,7 +1,7 @@
 type: charm
 bases:
 - name: ubuntu
-  channel: "22.04"
+  channel: "24.04"
 
 parts:
   charm:
