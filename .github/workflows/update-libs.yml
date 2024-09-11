@@ -25,7 +25,7 @@ jobs:
           charmcraft fetch-lib
 
       - name: Create a PR for local changes
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           commit-message: "chore: update charm libraries"
           committer: "Github Actions <github-actions@github.com>"
