@@ -3,7 +3,7 @@ on:
   # Manual trigger
   workflow_dispatch:
   schedule:
-    - cron: "33 22 * * *"
+    - cron: "33 22 * * 5"
 
 permissions:
   contents: write
@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Fetch charm libraries
         run: |
