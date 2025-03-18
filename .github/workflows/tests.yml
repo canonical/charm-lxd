@@ -78,7 +78,7 @@ jobs:
           lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty lxc delete --project charmcraft
 
     - name: Upload charms
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
       with:
         name: charms
         path: ./*.charm
@@ -259,7 +259,7 @@ jobs:
 
     - name: Juju debug-log
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
       with:
         name: juju-debug-logs ${{ github.job }}
         path: juju-debug.log
