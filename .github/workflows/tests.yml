@@ -4,6 +4,9 @@ on:
     branches:
       - main
   pull_request:
+  schedule:
+    - cron: "33 22 * * 4"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,18 +47,48 @@ jobs:
     - name: Checkout
       uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
+    - name: Setup LXD
+      uses: canonical/setup-lxd@main
+      with:
+        channel: latest/edge
+        preseed: |
+          config:
+            images.compression_algorithm: none
+          networks:
+          - config:
+              ipv4.address: auto
+              ipv6.address: auto
+            description: ""
+            name: lxdbr0
+            type: ""
+            project: default
+          storage_pools:
+          - config:
+              size: 10GiB
+            description: ""
+            name: default
+            driver: zfs
+          storage_volumes: []
+          profiles:
+          - config: {}
+            description: ""
+            devices:
+              eth0:
+                name: eth0
+                network: lxdbr0
+                type: nic
+              root:
+                path: /
+                pool: default
+                type: disk
+            name: default
+          projects: []
+          cluster: null
+
     - name: Install dependencies
       run: |
           set -x
 
-          sudo apt-get autopurge -y containerd.io docker-ce podman uidmap
-          sudo ip link delete docker0
-          sudo nft flush ruleset
-
-          sudo snap install lxd --channel=latest/edge
-          sudo snap set lxd daemon.group=adm
-          sudo lxd waitready
-          sudo lxd init --auto --storage-backend=zfs --storage-create-loop=10
           sudo snap install charmcraft --classic
           sudo snap install juju
 
@@ -89,7 +122,6 @@ jobs:
     - name: Bootstrap Juju
       run: |
           set -eux
-          lxc network set lxdbr0 ipv6.address=none
           juju bootstrap lxd local
 
     - name: Exercice lxd-https relation
