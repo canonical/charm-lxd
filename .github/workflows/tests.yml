@@ -120,7 +120,6 @@ jobs:
     - name: Bootstrap Juju
       run: |
           set -eux
-          lxc network set lxdbr0 ipv6.address=none
           juju bootstrap lxd local
 
     - name: Exercice lxd-https relation
