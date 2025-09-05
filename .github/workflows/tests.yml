@@ -152,7 +152,7 @@ jobs:
 
           echo "==> Test 22.04 charm in standalone mode"
           juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
-          juju deploy ./https-client_ubuntu-22.04-amd64.charm
+          juju deploy ./https-client_ubuntu@24.04-amd64.charm
           juju relate https-client lxd
           juju_wait
 
