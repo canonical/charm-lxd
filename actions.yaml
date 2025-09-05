@@ -27,7 +27,7 @@ get-client-token:
   description: Return a client certificate add token to use by the client as `lxc remote add <remote-name> <token>`
   params:
     name:
-      description: The user-specified identifier (optional)
+      description: The user-specified identifier
       type: string
     projects:
       description: A comma separated list of projects to restrict the client certificate to (optional)

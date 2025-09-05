@@ -413,6 +413,12 @@ class LxdCharm(CharmBase):
             return
 
         name: str = event.params.get("name", "")
+        if not name:
+            msg = "Missing required parameter: name"
+            event.fail(msg)
+            logger.error(msg)
+            return
+
         projects: str = event.params.get("projects", "")
 
         token: str = self.lxd_trust_token(name=name, projects=projects)
