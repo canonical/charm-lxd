@@ -472,6 +472,10 @@ class LxdCharm(CharmBase):
 
         error = False
 
+        # Model config changes like proxy settings will trigger this event
+        # so refresh configuration of core.proxy_* keys
+        self.juju_set_proxy()
+
         # Space binding changes will trigger this event but won't show up in self.config
         # so those need to be processed even when config_changed() returns nothing
         for listener in ("bgp", "dns", "https", "metrics"):
