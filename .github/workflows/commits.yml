@@ -1,0 +1,14 @@
+name: Commits
+on:
+  - pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: Canonical CLA signed
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Check if Canonical CLA signed
+      uses: canonical/has-signed-canonical-cla@v2
