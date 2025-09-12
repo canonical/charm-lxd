@@ -1499,36 +1499,13 @@ class LxdCharm(CharmBase):
 
     def juju_set_proxy(self) -> None:
         """Apply proxy config."""
-        juju_proxy = "/etc/juju-proxy.conf"
-        if not os.path.exists(juju_proxy):
-            logger.debug("No proxy config from Juju.")
-            return
-
-        http_proxy = ""
-        https_proxy = ""
-        no_proxy = ""
-
-        with open(juju_proxy, encoding="UTF-8") as f:
-            for line in f:
-                # Only consider lines exporting variables
-                if not line.startswith("export "):
-                    continue
-
-                # Strip the export prefix to only keep the variable and value
-                line = line.rstrip().replace("export ", "", 1)
-
-                # Parse variable=value lines
-                try:
-                    k, v = line.split("=", 1)
-                except (IndexError, ValueError):
-                    continue
-
-                if k == "HTTP_PROXY":
-                    http_proxy = v
-                elif k == "HTTPS_PROXY":
-                    https_proxy = v
-                elif k == "NO_PROXY":
-                    no_proxy = v
+        http_proxy = os.getenv("JUJU_CHARM_HTTP_PROXY", "")
+        https_proxy = os.getenv("JUJU_CHARM_HTTPS_PROXY", "")
+        no_proxy = os.getenv("JUJU_CHARM_NO_PROXY", "")
+        logger.debug(
+            f"Retrieved proxy config from model: http-proxy='{http_proxy}', "
+            f"https-proxy='{https_proxy}', no-proxy='{no_proxy}'"
+        )
 
         try:
             client = pylxd.Client()
