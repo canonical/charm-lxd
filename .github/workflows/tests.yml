@@ -156,6 +156,9 @@ jobs:
           juju relate https-client lxd
           juju_wait
 
+          echo "==> set the juju-http-proxy config"
+          juju model-config juju-http-proxy="http://squid.example.com:3128"
+
           juju status --relations
 
           echo "==> list trusted client certs"
@@ -170,6 +173,15 @@ jobs:
 
           echo "==> check that the client cert was not left behind"
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
+
+          echo "==> check the proxy config was applied"
+          # This also deals with the "first use" banner that would otherwise interfere with the tests
+          # > To start your first container, try: ...
+          juju exec --unit lxd/leader -- lxc config show
+          [ "$(juju exec --unit lxd/leader -- lxc config get core.proxy_http)" = "http://squid.example.com:3128" ]
+
+          echo "==> remove the juju-http-proxy config"
+          juju model-config juju-http-proxy=""
 
           echo "==> set the projects config and re-establish the relation"
           juju config https-client projects="default"
@@ -186,6 +198,9 @@ jobs:
           juju_wait
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
           juju status --relations
+
+          echo "==> check the proxy config was undone"
+          [ "$(juju exec --unit lxd/leader -- lxc config get core.proxy_http)" = "" ]
 
     - name: Test opening/closing ports
       run: |
