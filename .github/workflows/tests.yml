@@ -151,8 +151,8 @@ jobs:
           juju model-config logging-config="<root>=WARNING;unit=DEBUG"
 
           echo "==> Test 22.04 charm in standalone mode"
-          juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
-          juju deploy ./https-client_ubuntu-22.04-amd64.charm
+          juju deploy ./lxd_ubuntu@22.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
+          juju deploy ./https-client_ubuntu@24.04-amd64.charm
           juju relate https-client lxd
           juju_wait
 
@@ -257,9 +257,9 @@ jobs:
           }
           trap debug err exit
 
-          echo "==> Test 22.04 charm in cluster mode"
+          echo "==> Test 24.04 charm in cluster mode"
           NODE_CREATED="3"
-          juju deploy ./lxd_ubuntu-22.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
+          juju deploy ./lxd_ubuntu@24.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
           juju wait-for application lxd --query='life=="alive" && status=="available" && forEach(units, unit => unit.life=="alive")' || true  # wait for leader-election
           juju status --relations
 
