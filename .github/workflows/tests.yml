@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   static-analysis:
+    # Do not run static analysis on schedule for forks
+    if: github.event_name != 'schedule' || github.repository == 'canonical/charm-lxd'
     name: Static analysis
     runs-on: ubuntu-24.04
     steps:
