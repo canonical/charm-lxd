@@ -1514,18 +1514,22 @@ class LxdCharm(CharmBase):
         try:
             client = pylxd.Client()
             conf = client.api.get().json()["metadata"]["config"]
-            orig_conf = conf
-            if http_proxy:
+            refresh: bool = False
+            if conf.get("core.proxy_http", "") != http_proxy:
+                refresh = True
                 logger.debug(f"Configuring core.proxy_http={http_proxy}")
                 conf["core.proxy_http"] = http_proxy
-            if https_proxy:
+            if conf.get("core.proxy_https", "") != https_proxy:
+                refresh = True
                 logger.debug(f"Configuring core.proxy_https={https_proxy}")
                 conf["core.proxy_https"] = https_proxy
-            if no_proxy:
+            if conf.get("core.proxy_ignore_hosts", "") != no_proxy:
+                refresh = True
                 logger.debug(f"Configuring core.proxy_ignore_hosts={no_proxy}")
                 conf["core.proxy_ignore_hosts"] = no_proxy
 
-            if conf != orig_conf:
+            if refresh:
+                logger.info("Applying proxy configuration to LXD")
                 client.api.put(json={"config": conf})
 
         except pylxd.exceptions.LXDAPIException as e:
