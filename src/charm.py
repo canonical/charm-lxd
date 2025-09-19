@@ -472,6 +472,10 @@ class LxdCharm(CharmBase):
 
         error = False
 
+        # Model config changes like proxy settings will trigger this event
+        # so refresh configuration of core.proxy_* keys
+        self.juju_set_proxy()
+
         # Space binding changes will trigger this event but won't show up in self.config
         # so those need to be processed even when config_changed() returns nothing
         for listener in ("bgp", "dns", "https", "metrics"):
@@ -1499,52 +1503,33 @@ class LxdCharm(CharmBase):
 
     def juju_set_proxy(self) -> None:
         """Apply proxy config."""
-        juju_proxy = "/etc/juju-proxy.conf"
-        if not os.path.exists(juju_proxy):
-            logger.debug("No proxy config from Juju.")
-            return
-
-        http_proxy = ""
-        https_proxy = ""
-        no_proxy = ""
-
-        with open(juju_proxy, encoding="UTF-8") as f:
-            for line in f:
-                # Only consider lines exporting variables
-                if not line.startswith("export "):
-                    continue
-
-                # Strip the export prefix to only keep the variable and value
-                line = line.rstrip().replace("export ", "", 1)
-
-                # Parse variable=value lines
-                try:
-                    k, v = line.split("=", 1)
-                except (IndexError, ValueError):
-                    continue
-
-                if k == "HTTP_PROXY":
-                    http_proxy = v
-                elif k == "HTTPS_PROXY":
-                    https_proxy = v
-                elif k == "NO_PROXY":
-                    no_proxy = v
+        http_proxy = os.getenv("JUJU_CHARM_HTTP_PROXY", "")
+        https_proxy = os.getenv("JUJU_CHARM_HTTPS_PROXY", "")
+        no_proxy = os.getenv("JUJU_CHARM_NO_PROXY", "")
+        logger.debug(
+            f"Retrieved proxy config from model: http-proxy='{http_proxy}', "
+            f"https-proxy='{https_proxy}', no-proxy='{no_proxy}'"
+        )
 
         try:
             client = pylxd.Client()
             conf = client.api.get().json()["metadata"]["config"]
-            orig_conf = conf
-            if http_proxy:
+            refresh: bool = False
+            if conf.get("core.proxy_http", "") != http_proxy:
+                refresh = True
                 logger.debug(f"Configuring core.proxy_http={http_proxy}")
                 conf["core.proxy_http"] = http_proxy
-            if https_proxy:
+            if conf.get("core.proxy_https", "") != https_proxy:
+                refresh = True
                 logger.debug(f"Configuring core.proxy_https={https_proxy}")
                 conf["core.proxy_https"] = https_proxy
-            if no_proxy:
+            if conf.get("core.proxy_ignore_hosts", "") != no_proxy:
+                refresh = True
                 logger.debug(f"Configuring core.proxy_ignore_hosts={no_proxy}")
                 conf["core.proxy_ignore_hosts"] = no_proxy
 
-            if conf != orig_conf:
+            if refresh:
+                logger.info("Applying proxy configuration to LXD")
                 client.api.put(json={"config": conf})
 
         except pylxd.exceptions.LXDAPIException as e:
