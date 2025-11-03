@@ -1469,10 +1469,14 @@ class LxdCharm(CharmBase):
                 self.unit_blocked(f"Can't modify lxd- keys after initialization: {k}")
                 return False
 
-        # lxd-preseed can only be set when mode=standalone
-        if self.config.get("lxd-preseed", "") and self.config.get("mode", "") != "standalone":
-            self.unit_blocked("Can't provide lxd-preseed when mode != standalone")
-            return False
+        # If lxd-preseed is set, ensure it's valid YAML. Allowed in any mode.
+        preseed: str = self.config.get("lxd-preseed", "")
+        if preseed:
+            try:
+                _ = yaml.safe_load(preseed)
+            except yaml.YAMLError as e:
+                self.unit_blocked(f"Invalid YAML in lxd-preseed: {e}")
+                return False
 
         return True
 
