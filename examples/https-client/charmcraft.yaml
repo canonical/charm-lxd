@@ -1,3 +1,14 @@
+name: https-client
+summary: A simple example charm to test HTTPS relations with LXD
+links:
+  issues:
+  - https://github.com/canonical/charm-lxd/issues
+description: |
+  A simple example charm to test HTTPS relations with LXD
+requires:
+  https:
+    interface: lxd-https
+
 type: charm
 platforms:
   ubuntu@24.04:amd64:
@@ -17,3 +28,13 @@ parts:
     - pkg-config
     - rustc
     charm-entrypoint: src/https-client.py
+
+config:
+  options:
+    projects:
+      description: |
+        Comma separated list of projects to give access to.
+        If not provided, the client will have full unrestricted access
+        to everything. If however the projects list is an empty list,
+        the client will not have access to anything.
+      type: string
