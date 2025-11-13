@@ -1,3 +1,13 @@
+name: https-client
+summary: A simple example charm to test HTTPS relations with LXD
+maintainers:
+  - Simon Deziel <simon.deziel@canonical.com>
+description: |
+  A simple example charm to test HTTPS relations with LXD
+requires:
+  https:
+    interface: lxd-https
+
 type: charm
 platforms:
   ubuntu@24.04:amd64:
