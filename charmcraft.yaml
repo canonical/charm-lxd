@@ -1,3 +1,75 @@
+name: lxd
+summary: A next generation system container and virtual machine manager
+maintainers:
+  - Simon Deziel <simon.deziel@canonical.com>
+description: |
+  LXD is a next generation system container and virtual machine manager.
+  It offers a unified user experience around full Linux systems running
+  inside containers or virtual machines.
+tags:
+  - containers
+  - security
+  - system
+resources:
+  lxd-binary:
+    type: file
+    filename: lxd
+    description: |
+      A debug version of the LXD binary or a tarball of architecture specific
+      binaries. In the case of a tarball, the binaries should be at the root
+      and be named as "lxd_${ARCH}".
+
+      Attaching an empty file will undo the sideloading.
+  lxd-snap:
+    type: file
+    filename: lxd.snap
+    description: |
+      A custom LXD snap or tarball of architecture specific snaps to install.
+      In the case of a tarball, the snaps should be at the root and be
+      named as "lxd_${ARCH}.snap".
+
+      Attaching an empty file will undo the sideloading.
+storage:
+  local:
+    type: block
+    description: Local storage pool for LXD
+    minimum-size: 10G
+    multiple:
+      range: 0-1
+extra-bindings:
+  # the FAN underlay network to use
+  fan:
+peers:
+  cluster:
+    interface: lxd-cluster
+provides:
+  bgp:
+    interface: lxd-bgp
+  dns:
+    interface: lxd-dns
+  grafana-dashboard:
+    interface: grafana-dashboard
+  grafana-dashboard-k8s:
+    interface: grafana_dashboard
+  https:
+    interface: lxd-https
+  metrics:
+    interface: lxd-metrics
+  prometheus-manual:
+    interface: prometheus-manual
+  metrics-endpoint:
+    interface: prometheus_scrape
+requires:
+  ceph:
+    interface: ceph-client
+    optional: true
+  certificates:
+    interface: tls-certificates
+  logging:
+    interface: loki_push_api
+  ovsdb-cms:
+    interface: ovsdb-cms
+
 type: charm
 platforms:
   ubuntu@24.04:amd64:
