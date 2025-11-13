@@ -1104,6 +1104,7 @@ class LxdCharm(CharmBase):
         # If the remote side is clustered, it will use the app bag
         # if not clustered, the unit bag will be used
         d: Dict = {}
+        bag = None
         for bag in (event.app, event.unit):
             if not bag:
                 continue
