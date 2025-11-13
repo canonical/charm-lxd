@@ -33,3 +33,111 @@ parts:
       sed -i 's/{DS_LXD}/{prometheusds}/g' src/grafana_dashboards/LXD.json
     plugin: dump
     source: .
+
+config:
+  options:
+    kernel-hardening:
+      type: boolean
+      default: true
+      description: Restrict access to sensitive files/dirs (/proc/sched_debug, /sys/kernel/slab)
+
+    lxd-init-network:
+      type: boolean
+      default: true
+      description: Enable/disable the initialization of the default network
+
+    lxd-init-storage:
+      type: boolean
+      default: true
+      description: Enable/disable the initialization of the default storage pool
+
+    lxd-listen-bgp:
+      type: boolean
+      default: false
+      description: Enable/disable the BGP endpoint
+
+    lxd-listen-dns:
+      type: boolean
+      default: false
+      description: Enable/disable the authoritative DNS endpoint
+
+    lxd-listen-https:
+      type: boolean
+      default: false
+      description: Enable/disable the remote API (HTTPS)
+
+    lxd-listen-metrics:
+      type: boolean
+      default: false
+      description: Enable/disable the metrics endpoint
+
+    lxd-preseed:
+      type: string
+      description: Pass a YAML configuration to `lxd init` on initial start
+
+    mode:
+      type: string
+      default: "standalone"
+      description: Operate in `standalone` or `cluster` mode
+
+    snap-channel:
+      type: string
+      default: "auto"
+      description: The snap store channel for LXD to use or `auto` to use `lxd-installer` if available with a fallback to the default channel
+
+    snap-config-ceph-builtin:
+      type: boolean
+      description: Use snap-specific ceph configuration
+      default: true
+    snap-config-ceph-external:
+      type: boolean
+      description: Use the system's ceph tools (ignores snap-config-ceph-builtin)
+    snap-config-criu-enable:
+      type: boolean
+      description: Enable experimental live-migration support
+    snap-config-daemon-debug:
+      type: boolean
+      description: Increase logging to debug level
+    snap-config-daemon-group:
+      type: string
+      description: Set group of users that can interact with LXD
+    snap-config-daemon-syslog:
+      type: boolean
+      description: Send LXD log events to syslog
+    snap-config-lvm-external:
+      type: boolean
+      description: Use the system's LVM tools
+    snap-config-lxcfs-pidfd:
+      type: boolean
+      description: Start per-container process tracking
+    snap-config-lxcfs-loadavg:
+      type: boolean
+      description: Start tracking per-container load average
+    snap-config-lxcfs-cfs:
+      type: boolean
+      description: Consider CPU shares for CPU usage
+    snap-config-lxcfs-debug:
+      type: boolean
+      description: Increase logging to debug level
+    snap-config-openvswitch-builtin:
+      type: boolean
+      description: Run a snap-specific OVS daemon
+    snap-config-openvswitch-external:
+      type: boolean
+      description: Use the system's OVS tools (ignores snap-config-openvswitch-builtin)
+    snap-config-ovn-builtin:
+      type: boolean
+      description: Use snap-specific OVN configuration
+      default: true
+    snap-config-shiftfs-enable:
+      type: string
+      description: Enable shiftfs support
+    snap-config-ui-enable:
+      type: boolean
+      description: Enable the experimental web interface
+      default: false
+
+    sysctl-tuning:
+      type: boolean
+      default: true
+      description: Apply production sysctl tuning
