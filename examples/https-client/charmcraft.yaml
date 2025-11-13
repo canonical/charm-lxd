@@ -17,3 +17,13 @@ parts:
     - pkg-config
     - rustc
     charm-entrypoint: src/https-client.py
+
+config:
+  options:
+    projects:
+      description: |
+        Comma separated list of projects to give access to.
+        If not provided, the client will have full unrestricted access
+        to everything. If however the projects list is an empty list,
+        the client will not have access to anything.
+      type: string
