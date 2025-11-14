@@ -95,7 +95,7 @@ parts:
     - rustc
   grafana-dashboard:
     build-packages:
-      - wget
+    - wget
     override-pull: |-
       mkdir -p src/grafana_dashboards
       wget --https-only https://grafana.com/api/dashboards/19131/revisions/latest/download -O src/grafana_dashboards/LXD.json
