@@ -2005,22 +2005,8 @@ class LxdCharm(CharmBase):
             assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
 
             self.unit_maintenance("Applying LXD preseed")
+            self.lxd_apply_preseed(preseed.encode())
 
-            try:
-                # NOTE: When preseeding, no further configuration is applied.
-                subprocess.run(
-                    ["lxd", "init", "--preseed"],
-                    capture_output=True,
-                    check=True,
-                    input=preseed.encode(),
-                    timeout=600,
-                )
-            except subprocess.CalledProcessError as e:
-                self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
-                raise RuntimeError
-            except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
-                raise RuntimeError
         else:
             self.unit_maintenance("Performing initial configuration")
 
