@@ -301,6 +301,24 @@ jobs:
           echo "==> Check that all members are online and fully operational"
           checkOnlineMembers
 
+          echo "Cleanup cluster lxd units"
+          juju remove-application --no-prompt --force lxd
+          sleep 10
+          juju status
+
+          echo "==> Test 24.04 charm in cluster mode with preseed"
+          NODE_CREATED="2"
+          juju deploy ./lxd_ubuntu@24.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true --config lxd-preseed="$(cat examples/cluster-preseed.yaml)"
+          waitForApps lxd
+
+          echo "==> Check that all members are online and fully operational"
+          checkOnlineMembers
+
+          echo "==> Check the preseed was applied"
+          juju exec --unit lxd/leader -- lxc profile show default
+          [ "$(juju exec --unit lxd/leader -- lxc profile device get default eth0 network)" = "br0" ]
+          [ "$(juju exec --unit lxd/leader -- lxc profile device get default root pool)" = "data" ]
+
     - name: Test get-client-token action
       run: |
           set -eux
