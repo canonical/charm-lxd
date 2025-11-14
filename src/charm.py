@@ -1640,6 +1640,33 @@ class LxdCharm(CharmBase):
 
         return token
 
+    def lxd_apply_preseed(self, preseed_yaml: bytes) -> None:
+        """Apply a YAML preseed to LXD."""
+        logger.debug("Applying LXD preseed")
+
+        try:
+            subprocess.run(
+                ["lxd", "init", "--preseed"],
+                capture_output=True,
+                check=True,
+                input=preseed_yaml,
+                timeout=600,
+            )
+        except subprocess.CalledProcessError as e:
+            self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
+
+            # Leave a copy of the YAML preseed that didn't work
+            handle, tmp_file = tempfile.mkstemp()
+            with os.fdopen(handle, "wb") as f:
+                f.write(preseed_yaml)
+            logger.error(f"The YAML preseed that caused a failure was saved to {tmp_file}")
+            raise RuntimeError
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"Timeout exceeded while running {e.cmd!r}")
+            raise RuntimeError
+
+        logger.debug("LXD preseed applied successfully")
+
     def lxd_cluster_join(self, token: str, member_config: List[Dict]) -> None:
         """Join an existing cluster."""
         logger.debug("Joining cluster")
