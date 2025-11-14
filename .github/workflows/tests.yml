@@ -252,7 +252,8 @@ jobs:
           juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME},"
 
           echo "==> Remove trusted client cert"
-          juju run --wait=2m lxd/leader remove-trusted-client fingerprint="$(openssl x509 -noout -fingerprint -sha256 -in ~/snap/lxd/common/config/client.crt)" | grep -F 'result: The client certificate is no longer trusted'
+          FINGERPRINT="$(openssl x509 -noout -fingerprint -sha256 -in ~/snap/lxd/common/config/client.crt | sed 's/.*=//; s/://g; s/\(.*\)/\L\1/')"
+          juju run --wait=2m lxd/leader remove-trusted-client fingerprint="${FINGERPRINT}" | grep -F 'result: The client certificate is no longer trusted'
           echo "==> Confirm the user's cert was removed from the trusted list"
           ! juju exec --unit lxd/leader -- lxc config trust list -f csv | grep "^client,${CERT_NAME}," || false
 
