@@ -131,6 +131,7 @@ jobs:
       with:
         name: charms
         path: ./*.charm
+        retention-days: 5
 
     - name: Bootstrap Juju
       run: |
