@@ -2001,11 +2001,41 @@ class LxdCharm(CharmBase):
         init_storage: bool = self.config["lxd-init-storage"]
         init_network: bool = self.config["lxd-init-network"]
 
-        if preseed:
-            assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
-
+        if preseed and mode == "standalone":
             self.unit_maintenance("Applying LXD preseed")
             self.lxd_apply_preseed(preseed.encode())
+
+        elif preseed and mode == "cluster" and self.unit.is_leader():
+            # Leader applies the custom preseed, injecting cluster bits
+            self.unit_maintenance("Applying LXD cluster init preseed (leader)")
+
+            cluster_address = self.juju_space_get_address("cluster")
+            if not cluster_address:
+                self.unit_blocked("Unable to get the cluster space address")
+                raise RuntimeError
+
+            server_name: str = os.uname().nodename
+
+            # Inject required cluster init bits
+            preseed_dict: Dict = yaml.safe_load(preseed) or {}
+            preseed_dict.setdefault("config", {})
+            preseed_dict["config"]["cluster.https_address"] = cluster_address
+            preseed_dict.setdefault("cluster", {})
+            preseed_dict["cluster"]["enabled"] = True
+            preseed_dict["cluster"]["server_name"] = server_name
+            # Remove join-only fields if present
+            for k in ("server_address", "cluster_token", "member_config"):
+                preseed_dict["cluster"].pop(k, None)
+
+            preseed_yaml = yaml.safe_dump(
+                preseed_dict,
+                sort_keys=False,
+                default_style=None,
+                default_flow_style=None,
+                encoding="UTF-8",
+            )
+            self.lxd_apply_preseed(preseed_yaml)
+            self._stored.lxd_clustered = True
 
         else:
             self.unit_maintenance("Performing initial configuration")
