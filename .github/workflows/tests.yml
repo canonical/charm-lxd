@@ -123,7 +123,7 @@ jobs:
           charmcraft pack -v --project-dir examples/https-client
 
           echo "==> cleanup project to reclaim space"
-          lxc list --project charmcraft -c n -f csv | xargs --no-run-if-empty lxc delete --project charmcraft
+          lxc project delete --force charmcraft
 
     - name: Upload charms
       uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
