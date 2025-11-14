@@ -319,6 +319,14 @@ jobs:
           [ "$(juju exec --unit lxd/leader -- lxc profile device get default eth0 network)" = "br0" ]
           [ "$(juju exec --unit lxd/leader -- lxc profile device get default root pool)" = "data" ]
 
+          echo "==> Grow the cluster"
+          NODE_CREATED="3"
+          juju add-unit lxd
+          waitForApps lxd
+
+          echo "==> Check that all members are online and fully operational"
+          checkOnlineMembers
+
     - name: Test get-client-token action
       run: |
           set -eux
