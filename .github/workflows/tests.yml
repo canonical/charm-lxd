@@ -138,10 +138,11 @@ jobs:
           STEP_NAME="lxd-https relation"
           echo "# === $STEP_NAME starts === #" >> juju-debug.log
 
-          # Valid statuses list: https://juju.is/docs/juju/status
-          juju_wait() {
-            # XXX: wait-for may timeout while things are usable so continue on error
-            juju wait-for model ci-testing --query='life=="alive" && status=="available" && len(applications) > 0 && forEach(applications, app => app.status == "active") && len(units) > 0 && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || true
+          waitForApps() {
+            for app in "${@}"; do
+              juju wait-for application "${app}" --query='life=="alive" && status=="active" && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || true
+            done
+            juju status --relations
           }
 
           # capture juju's logs on error
@@ -162,7 +163,7 @@ jobs:
           juju deploy ./lxd_ubuntu@22.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
           juju deploy ./https-client_ubuntu@24.04-amd64.charm
           juju relate https-client lxd
-          juju_wait
+          waitForApps lxd https-client
 
           echo "==> set the juju-http-proxy config"
           juju model-config juju-http-proxy="http://squid.example.com:3128"
@@ -177,7 +178,7 @@ jobs:
 
           echo "==> break the relationship to have the client cert removed"
           juju remove-relation https-client lxd
-          juju_wait
+          waitForApps lxd https-client
 
           echo "==> check that the client cert was not left behind"
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
@@ -194,7 +195,7 @@ jobs:
           echo "==> set the projects config and re-establish the relation"
           juju config https-client projects="default"
           juju relate https-client lxd
-          juju_wait
+          waitForApps lxd https-client
 
           echo "==> check that the client cert is now restricted"
           FINGERPRINT="$(juju exec --unit lxd/leader -- lxc config trust list --format csv | awk -F, '/,juju-relation-https-client/ {print $4}')"
@@ -203,7 +204,7 @@ jobs:
 
           echo "==> removing the https-client application will break the relation causing the removal of the cert"
           juju remove-application --no-prompt https-client
-          juju_wait
+          waitForApps lxd
           ! juju exec --unit lxd/leader -- lxc config trust list --format csv | grep -E ",juju-relation-https-client/[0-9]+," || false
           juju status --relations
 
