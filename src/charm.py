@@ -1104,6 +1104,7 @@ class LxdCharm(CharmBase):
         # If the remote side is clustered, it will use the app bag
         # if not clustered, the unit bag will be used
         d: Dict = {}
+        bag = None
         for bag in (event.app, event.unit):
             if not bag:
                 continue
@@ -1468,10 +1469,14 @@ class LxdCharm(CharmBase):
                 self.unit_blocked(f"Can't modify lxd- keys after initialization: {k}")
                 return False
 
-        # lxd-preseed can only be set when mode=standalone
-        if self.config.get("lxd-preseed", "") and self.config.get("mode", "") != "standalone":
-            self.unit_blocked("Can't provide lxd-preseed when mode != standalone")
-            return False
+        # If lxd-preseed is set, ensure it's valid YAML. Allowed in any mode.
+        preseed: str = self.config.get("lxd-preseed", "")
+        if preseed:
+            try:
+                _ = yaml.safe_load(preseed)
+            except yaml.YAMLError as e:
+                self.unit_blocked(f"Invalid YAML in lxd-preseed: {e}")
+                return False
 
         return True
 
@@ -1635,47 +1640,14 @@ class LxdCharm(CharmBase):
 
         return token
 
-    def lxd_cluster_join(self, token: str, member_config: List[Dict]) -> None:
-        """Join an existing cluster."""
-        logger.debug("Joining cluster")
+    def lxd_apply_preseed(self, preseed_yaml: bytes) -> None:
+        """Apply a YAML preseed to LXD."""
+        logger.debug("Applying LXD preseed")
 
-        # If a local storage device was provided, it needs to be added in the storage-pool
-        if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
-            for m in member_config:
-                if m.get("entity") == "storage-pool" and m.get("key") == "source":
-                    dev = str(self.model.storages["local"][0].location)
-                    m["value"] = dev
-
-        cluster_address = self.juju_space_get_address("cluster")
-        if not cluster_address:
-            self.unit_blocked("Unable to get the cluster space address")
-            raise RuntimeError
-
-        preseed = {
-            "config": {},
-            "networks": [],
-            "storage_pools": [],
-            "profiles": [],
-            "projects": [],
-            "cluster": {
-                "enabled": True,
-                "member_config": member_config,
-                "server_address": cluster_address,
-                "cluster_token": token,
-            },
-        }
-        preseed_yaml = yaml.safe_dump(
-            preseed,
-            sort_keys=False,
-            default_style=None,
-            default_flow_style=None,
-            encoding="UTF-8",
-        )
-
-        self.unit_maintenance("Joining cluster")
         try:
             subprocess.run(
                 ["lxd", "init", "--preseed"],
+                capture_output=True,
                 check=True,
                 input=preseed_yaml,
                 timeout=600,
@@ -1692,6 +1664,49 @@ class LxdCharm(CharmBase):
         except subprocess.TimeoutExpired as e:
             logger.error(f"Timeout exceeded while running {e.cmd!r}")
             raise RuntimeError
+
+        logger.debug("LXD preseed applied successfully")
+
+    def lxd_cluster_join(self, token: str, member_config: List[Dict]) -> None:
+        """Join an existing cluster."""
+        logger.debug("Joining cluster")
+
+        # If a local storage device was provided, it needs to be added in the storage-pool
+        if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
+            for m in member_config:
+                if m.get("entity") == "storage-pool" and m.get("key") == "source":
+                    dev = str(self.model.storages["local"][0].location)
+                    m["value"] = dev
+
+        cluster_address = self.juju_space_get_address("cluster")
+        if not cluster_address:
+            self.unit_blocked("Unable to get the cluster space address")
+            raise RuntimeError
+
+        self.unit_maintenance("Joining cluster")
+
+        preseed_dict: Dict = {
+            "config": {},
+            "networks": [],
+            "storage_pools": [],
+            "profiles": [],
+            "projects": [],
+            "cluster": {
+                "enabled": True,
+                "member_config": member_config,
+                "server_address": cluster_address,
+                "cluster_token": token,
+            },
+        }
+
+        preseed_yaml: bytes = yaml.safe_dump(
+            preseed_dict,
+            sort_keys=False,
+            default_style=None,
+            default_flow_style=None,
+            encoding="UTF-8",
+        )
+        self.lxd_apply_preseed(preseed_yaml)
 
         self.unit_active()
         self._stored.lxd_clustered = True
@@ -1986,26 +2001,42 @@ class LxdCharm(CharmBase):
         init_storage: bool = self.config["lxd-init-storage"]
         init_network: bool = self.config["lxd-init-network"]
 
-        if preseed:
-            assert mode == "standalone", "lxd-preseed is only supported when mode=standalone"
-
+        if preseed and mode == "standalone":
             self.unit_maintenance("Applying LXD preseed")
+            self.lxd_apply_preseed(preseed.encode())
 
-            try:
-                # NOTE: When preseeding, no further configuration is applied.
-                subprocess.run(
-                    ["lxd", "init", "--preseed"],
-                    capture_output=True,
-                    check=True,
-                    input=preseed.encode(),
-                    timeout=600,
-                )
-            except subprocess.CalledProcessError as e:
-                self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
+        elif preseed and mode == "cluster" and self.unit.is_leader():
+            # Leader applies the custom preseed, injecting cluster bits
+            self.unit_maintenance("Applying LXD cluster init preseed (leader)")
+
+            cluster_address = self.juju_space_get_address("cluster")
+            if not cluster_address:
+                self.unit_blocked("Unable to get the cluster space address")
                 raise RuntimeError
-            except subprocess.TimeoutExpired as e:
-                self.unit_blocked(f"Timeout exceeded while running {e.cmd!r}")
-                raise RuntimeError
+
+            server_name: str = os.uname().nodename
+
+            # Inject required cluster init bits
+            preseed_dict: Dict = yaml.safe_load(preseed) or {}
+            preseed_dict.setdefault("config", {})
+            preseed_dict["config"]["cluster.https_address"] = cluster_address
+            preseed_dict.setdefault("cluster", {})
+            preseed_dict["cluster"]["enabled"] = True
+            preseed_dict["cluster"]["server_name"] = server_name
+            # Remove join-only fields if present
+            for k in ("server_address", "cluster_token", "member_config"):
+                preseed_dict["cluster"].pop(k, None)
+
+            preseed_yaml = yaml.safe_dump(
+                preseed_dict,
+                sort_keys=False,
+                default_style=None,
+                default_flow_style=None,
+                encoding="UTF-8",
+            )
+            self.lxd_apply_preseed(preseed_yaml)
+            self._stored.lxd_clustered = True
+
         else:
             self.unit_maintenance("Performing initial configuration")
 

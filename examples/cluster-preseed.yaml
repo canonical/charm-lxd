@@ -1,0 +1,21 @@
+# example preseed to be used for clusters
+storage_pools:
+- name: data
+  driver: dir
+networks:
+- name: br0
+  type: bridge
+  config:
+    ipv4.address: none
+    ipv6.address: none
+profiles:
+- name: default
+  devices:
+    eth0:
+      name: eth0
+      network: br0
+      type: nic
+    root:
+      path: /
+      pool: data
+      type: disk
