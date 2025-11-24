@@ -86,13 +86,11 @@ parts:
   charm:
     build-packages:
     - ca-certificates
-    - cargo
     - git
-    - libffi-dev
-    - libssl-dev
-    - pkg-config
     - python3-dev
-    - rustc
+    # Avoid (lengthy) compilation of python cryptography which requires (too) modern cargo/rustc
+    charm-binary-python-packages:
+    - pyopenssl
   grafana-dashboard:
     build-packages:
     - wget
