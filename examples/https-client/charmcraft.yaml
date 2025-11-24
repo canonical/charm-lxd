@@ -21,12 +21,7 @@ platforms:
 parts:
   charm:
     build-packages:
-    - cargo
     - git
-    - libffi-dev
-    - libssl-dev
-    - pkg-config
-    - rustc
     charm-entrypoint: src/https-client.py
 
 config:
