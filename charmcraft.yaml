@@ -86,13 +86,13 @@ parts:
   charm:
     build-packages:
     - ca-certificates
-    - cargo
+    - cargo-1.85  # 22.04/24.04 bases comes with cargo==1.75.0 in main which is too old for python cryptography
     - git
     - libffi-dev
     - libssl-dev
     - pkg-config
     - python3-dev
-    - rustc
+    - rustc-1.85  # 22.04/24.04 bases comes with rustc==1.75.0 in main which is too old for python cryptography
   grafana-dashboard:
     build-packages:
     - wget

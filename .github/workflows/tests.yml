@@ -114,8 +114,9 @@ jobs:
           # Not depending on binaries is a good thing for arches lacking some wheels but in CI, we only care about amd64 which has
           # all the needed wheels. As such, tweak the charmcraft.yaml to include the requirements as binary packages and skip the
           # lengthy compilations. The official build happening on Launchpad will use the proper/unmangled charmcraft.yaml files.
-          ./.github/scripts/charmcraft-tweak.py . "cargo,libffi-dev,libssl-dev,pkg-config,python3-dev,rustc"
-          ./.github/scripts/charmcraft-tweak.py examples/https-client/ "cargo,libffi-dev,libssl-dev,pkg-config,python3-dev,rustc"
+          for dir in . examples/https-client/; do
+            ./.github/scripts/charmcraft-tweak.py "${dir}" "cargo-1.85,libffi-dev,libssl-dev,pkg-config,python3-dev,rustc-1.85"
+          done
 
           charmcraft pack -v
 
