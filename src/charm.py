@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 import pylxd
 import yaml
+from adoption import AdoptionError, AdoptionManager
 from charms.grafana_k8s.v0.grafana_dashboard import GrafanaDashboardProvider
 from charms.loki_k8s.v0.loki_push_api import LokiPushApiConsumer
 from cosl.juju_topology import JujuTopology
@@ -106,6 +107,7 @@ class LxdCharm(CharmBase):
             charm=self, relation_name="grafana-dashboard-k8s"
         )
         self._loki_consumer = LokiPushApiConsumer(self)
+        self._adoption = AdoptionManager(self)
 
         # Action event handlers
         self.framework.observe(
@@ -470,6 +472,10 @@ class LxdCharm(CharmBase):
         """
         logger.info("Updating charm config")
 
+        if not self._adoption.config_mutations_allowed():
+            self._adoption.log_mutation_skip("config")
+            return
+
         error = False
 
         # Model config changes like proxy settings will trigger this event
@@ -556,6 +562,19 @@ class LxdCharm(CharmBase):
         if not self.config_is_valid():
             return
 
+        if self._adoption.should_adopt_existing():
+            try:
+                self._adoption.adopt_existing_lxd()
+                logger.info("Existing LXD adopted successfully")
+                self.unit_active("Existing LXD adopted successfully")
+            except AdoptionError:
+                logger.error("Failed to adopt existing LXD")
+            return
+
+        self._install_bootstrap_lxd(event)
+
+    def _install_bootstrap_lxd(self, event: InstallEvent) -> None:
+        """Perform the upstream install/bootstrap flow for fresh hosts."""
         # Install LXD itself
         try:
             self.snap_install_lxd()
@@ -1063,6 +1082,10 @@ class LxdCharm(CharmBase):
 
         If clustered, only the leader unit needs to take action.
         """
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("https relation")
+            return
+
         # In cluster mode, only the leader needs to handle the trust removal
         if self.config.get("mode", "") == "cluster":
             if not self.unit.is_leader() or not self._stored.lxd_clustered:
@@ -1081,6 +1104,10 @@ class LxdCharm(CharmBase):
 
         If clustered, only the leader unit needs to take action.
         """
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("https relation")
+            return
+
         # Relation cannot be rejected so notify the operator if it won't
         # be usable and don't touch the remote unit data bag at all
         if not self._stored.config["lxd-listen-https"]:
@@ -1193,6 +1220,10 @@ class LxdCharm(CharmBase):
 
         If clustered, only the leader unit needs to take action.
         """
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("https relation")
+            return
+
         # In cluster mode, only the leader needs to handle the trust removal
         if self.config.get("mode", "") == "cluster":
             if not self.unit.is_leader() or not self._stored.lxd_clustered:
@@ -1209,6 +1240,10 @@ class LxdCharm(CharmBase):
     def _on_loki_push_api_endpoint_joined(self, event: RelationJoinedEvent):
         """Configure LXD to send logs to Loki."""
         logger.debug("Loki push API endpoint joined")
+
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("logging relation")
+            return
 
         loki_endpoints = self._loki_consumer.loki_endpoints
         if not loki_endpoints:
@@ -1247,6 +1282,10 @@ class LxdCharm(CharmBase):
         """Configure LXD to stop sending logs to Loki."""
         logger.debug("Loki push API endpoint departed")
 
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("logging relation")
+            return
+
         # Configuring LXD to stop streaming to Loki
         client = pylxd.Client()
         try:
@@ -1263,6 +1302,10 @@ class LxdCharm(CharmBase):
 
         The leader unit also needs to keep the app data up to date.
         """
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("metrics-endpoint relation")
+            return
+
         cert_name: str = f"{event.app.name}-metrics"
         metrics_authentication: Dict = self.get_peer_data_dict(self.app, "metrics_authentication")
         client_cert: str = metrics_authentication.get("client_cert", "")
@@ -1277,6 +1320,10 @@ class LxdCharm(CharmBase):
 
         # XXX: the data is saved in the peer app bag as all units need to access it.
         """
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("metrics-endpoint relation")
+            return
+
         if not self.metrics_address:
             logger.error(
                 f"The {event.relation.name} relation is not usable (lxd-listen-https=false and "
@@ -1307,6 +1354,10 @@ class LxdCharm(CharmBase):
 
         XXX: not using using relation_broken to ensure event.app still exists.
         """
+        if not self._adoption.relation_mutations_allowed():
+            self._adoption.log_mutation_skip("metrics-endpoint relation")
+            return
+
         # If clustered, only the leader needs to deal with the cert removal
         if self._stored.lxd_clustered and not self.unit.is_leader():
             return
