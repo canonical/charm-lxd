@@ -2103,6 +2103,13 @@ class LxdCharm(CharmBase):
                 # Configure the network
                 if network_dev:
                     network_config: Dict = {}
+
+                    def _fan_fallback(reason: str) -> Tuple[str, Dict]:
+                        msg = f"{reason}, falling back to lxdbr0"
+                        logger.warning(msg)
+                        self.unit_maintenance(msg)
+                        return ("lxdbr0", {})
+
                     if network_dev == "lxdfan0":  # try to find a valid subnet to use for FAN
                         try:
                             fan_address = self.juju_space_get_address("fan", require_ipv4=True)
@@ -2113,13 +2120,22 @@ class LxdCharm(CharmBase):
                                 "fan.underlay_subnet": str(fan_subnet),
                             }
                         except Exception:
-                            msg = "Can't find a valid subnet for FAN, falling back to lxdbr0"
-                            self.unit_maintenance(msg)
-                            network_dev = "lxdbr0"
-                            network_config = {}
+                            network_dev, network_config = _fan_fallback(
+                                "Can't find a valid subnet for FAN"
+                            )
 
                     self.unit_maintenance(f"Configuring network bridge ({network_dev})")
-                    client.networks.create(network_dev, config=network_config)
+                    try:
+                        client.networks.create(network_dev, config=network_config)
+                    except pylxd.exceptions.LXDAPIException as e:
+                        if network_dev != "lxdfan0":
+                            raise
+                        # FAN networking is not usable (e.g. missing kernel support),
+                        # fall back to a regular bridge.
+                        network_dev, network_config = _fan_fallback(
+                            f"FAN network creation failed: {e}"
+                        )
+                        client.networks.create(network_dev, config=network_config)
 
                     if not profile.devices.get("eth0"):
                         profile.devices["eth0"] = {
