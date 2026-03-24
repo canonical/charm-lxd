@@ -163,6 +163,14 @@ config:
       default: true
       description: Restrict access to sensitive files/dirs (/proc/sched_debug, /sys/kernel/slab)
 
+    adopt-existing:
+      type: boolean
+      default: false
+      description: |
+        If true, adopt an already installed standalone LXD host without
+        bootstrapping it. If LXD is absent, the charm falls back to the normal
+        bootstrap path for a fresh host.
+
     lxd-init-network:
       type: boolean
       default: true

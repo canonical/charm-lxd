@@ -3,6 +3,9 @@ build/
 *.charm
 .vscode/
 .tox/
+.tmp-test-venv/
 
 __pycache__/
 *.py[cod]
+lib/charms/grafana_k8s/v0/grafana_dashboard.py
+lib/charms/loki_k8s/v0/loki_push_api.py

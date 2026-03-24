@@ -36,6 +36,88 @@ Or a cluster of 3 members:
 juju deploy ch:lxd --num-units 3 --config mode=cluster
 ```
 
+## Development
+
+Charm library dependencies are declared in `charmcraft.yaml` and should be
+fetched locally for development rather than copied into git.
+
+Fetch the required libraries with:
+
+```shell
+./scripts/fetch-libs.sh
+```
+
+For local test runs, use:
+
+```shell
+PYTHONPATH=src:lib pytest tests/unit -q
+```
+
+## Adoption mode for existing hosts
+
+The charm supports a narrow adoption mode for already installed standalone LXD
+hosts.
+
+Existing clustered LXD members are not supported by this adoption flow.
+
+Example:
+
+```shell
+juju deploy ./lxd_ubuntu@24.04-amd64.charm lxd --config adopt-existing=true
+```
+
+Behavior:
+
+- if LXD is absent, the charm falls back to the normal bootstrap path
+- if LXD is present but not initialized, the unit blocks and does not mutate the host
+- if LXD is present and initialized, the charm adopts it without re-running the
+  install/bootstrap mutation path
+
+During the initial adoption attempt, the charm suppresses:
+
+- snap install/refresh
+- proxy writes
+- listener writes
+- relation-driven writes for `logging`, `metrics-endpoint`, and `https`
+
+Once adoption succeeds, normal management resumes even if `adopt-existing=true`
+remains set. That means later config changes and supported relations behave as
+they do for a normally managed host.
+
+If adoption does not complete, the unit stays blocked and read-only. The charm
+will not resume normal snap/config management for that existing host, even if
+`adopt-existing` is later toggled to `false`.
+
+Practical examples:
+
+The three deployment examples below are exercised in CI by
+`.github/scripts/test-readme-adoption-examples.sh` to help catch adoption
+regressions.
+
+```shell
+# Existing host is installed but not yet initialized: safe blocked status
+juju deploy ./lxd_ubuntu@24.04-amd64.charm lxd --to 10 --config adopt-existing=true
+
+# Existing initialized standalone host: adopt, then resume normal management
+juju deploy ./lxd_ubuntu@24.04-amd64.charm lxd --to 11 --config adopt-existing=true
+
+# Fresh blank host: bootstrap normally even with adopt-existing=true
+juju deploy ./lxd_ubuntu@24.04-amd64.charm lxd --to 12 --config adopt-existing=true
+```
+
+If the host blocks because it is not initialized yet, you can initialize LXD
+manually and redeploy the unit to re-run the adoption path.
+
+The helper below remains a manual end-to-end repro for that blocked ->
+initialize -> redeploy handoff.
+
+For a quick standalone repro from a model that already contains one machine,
+use:
+
+```shell
+./examples/test-adopt-existing-standalone.sh <model> <machine-id>
+```
+
 ## Resources
 
 For debugging purposes, the charm allows sideloading a LXD binary (`lxd-binary`) or a full LXD snap (`lxd-snap`) by attaching resources at deploy time or later on. Both resources also accept tarballs containing architecture specific assets to support mixed architecture deployments. Those tarballs need to contain files at the root named as lxd_${ARCH} for the `lxd-binary` resource and lxd_${ARCH}.snap for the `lxd-snap` resource.
