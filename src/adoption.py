@@ -57,13 +57,8 @@ class AdoptionManager:
         return self.adoption_requested() and self.existing_lxd_present()
 
     def pending_adoption_restrictions_active(self) -> bool:
-        """Whether the charm should still suppress normal management writes.
-
-        The safety gate is only active while adoption has been requested for an
-        already-present LXD installation and the charm has not yet marked that
-        host as initialized/adopted in stored state.
-        """
-        return self.should_adopt_existing() and not self._charm._stored.lxd_initialized
+        """Whether the charm should still suppress normal management writes."""
+        return bool(self._charm._stored.existing_lxd_unmanaged)
 
     def adopt_existing_lxd(self) -> None:
         """Adopt an existing standalone LXD installation without bootstrapping it."""
@@ -94,6 +89,7 @@ class AdoptionManager:
 
     def seed_adopted_stored_state(self, inventory: Dict) -> None:
         """Seed charm stored state for an adopted host."""
+        self._charm._stored.existing_lxd_unmanaged = False
         self._charm._stored.inside_container = self._detect_inside_container()
         self._charm._stored.lxd_initialized = True
         self._charm._stored.lxd_clustered = bool(inventory["server_clustered"])
@@ -141,8 +137,8 @@ class AdoptionManager:
     def log_mutation_skip(self, scope: str) -> None:
         """Log why a normal management path is being skipped."""
         logger.info(
-            "Skipping %s mutations while adopt-existing=true and an existing LXD "
-            "installation is pending adoption",
+            "Skipping %s mutations while an existing LXD installation remains "
+            "outside charm management",
             scope,
         )
 

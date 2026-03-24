@@ -56,6 +56,7 @@ class TestInstallAdoption(unittest.TestCase):
     def test_seed_adopted_state_marks_lxd_initialized(self):
         """Adoption state seeding should mark the host initialized."""
         charm = self.harness.charm
+        charm._stored.existing_lxd_unmanaged = True
 
         with patch.object(charm._adoption, "_detect_inside_container", return_value=False):
             charm._adoption.seed_adopted_stored_state(
@@ -64,6 +65,7 @@ class TestInstallAdoption(unittest.TestCase):
 
         self.assertTrue(charm._stored.lxd_initialized)
         self.assertFalse(charm._stored.lxd_clustered)
+        self.assertFalse(charm._stored.existing_lxd_unmanaged)
         self.assertEqual(charm._stored.config["adopt-existing"], True)
 
     def test_install_keeps_blocked_status_when_adoption_fails(self):
@@ -84,6 +86,7 @@ class TestInstallAdoption(unittest.TestCase):
             charm._on_charm_install(event)
 
         bootstrap_install.assert_not_called()
+        self.assertTrue(charm._stored.existing_lxd_unmanaged)
         self.assertEqual(charm.unit.status.name, "blocked")
         self.assertEqual(charm.unit.status.message, "pre-existing failure")
 

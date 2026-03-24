@@ -55,8 +55,10 @@ PYTHONPATH=src:lib pytest tests/unit -q
 
 ## Adoption mode for existing hosts
 
-This fork adds a narrow adoption mode for already installed standalone LXD
+The charm supports a narrow adoption mode for already installed standalone LXD
 hosts.
+
+Existing clustered LXD members are not supported by this adoption flow.
 
 Example:
 
@@ -82,7 +84,15 @@ Once adoption succeeds, normal management resumes even if `adopt-existing=true`
 remains set. That means later config changes and supported relations behave as
 they do for a normally managed host.
 
+If adoption does not complete, the unit stays blocked and read-only. The charm
+will not resume normal snap/config management for that existing host, even if
+`adopt-existing` is later toggled to `false`.
+
 Practical examples:
+
+The three deployment examples below are exercised in CI by
+`.github/scripts/test-readme-adoption-examples.sh` to help catch adoption
+regressions.
 
 ```shell
 # Existing host is installed but not yet initialized: safe blocked status
@@ -97,6 +107,9 @@ juju deploy ./lxd_ubuntu@24.04-amd64.charm lxd --to 12 --config adopt-existing=t
 
 If the host blocks because it is not initialized yet, you can initialize LXD
 manually and redeploy the unit to re-run the adoption path.
+
+The helper below remains a manual end-to-end repro for that blocked ->
+initialize -> redeploy handoff.
 
 For a quick standalone repro from a model that already contains one machine,
 use:

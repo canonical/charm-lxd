@@ -139,6 +139,13 @@ jobs:
           set -eux
           juju bootstrap lxd local
 
+    - name: Test README adoption examples
+      run: |
+          set -eux
+          ./.github/scripts/test-readme-adoption-examples.sh \
+            ci-adoption-readme \
+            ./lxd_ubuntu@24.04-amd64.charm
+
     - name: Exercice lxd-https relation
       run: |
           set -eux

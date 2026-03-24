@@ -89,9 +89,17 @@ class LxdCharm(CharmBase):
         super().__init__(*args)
 
         # Initialize the persistent storage if needed
+        # Note on: existing_lxd_unmanaged: tracks if LXD was already running before this charm took over
+        # * It is set before attempting adoption of an already-installed host.
+        # * It is only cleared on successful standalone adoption.
+        # * If adoption fails or the host is an unsupported cluster member, 
+        #   config writes, snap installs/refreshes, listener changes, and relation-driven mutations stay blocked, 
+        #   even if adopt-existing is later flipped to false
+
         self._stored.set_default(
             addresses={},
             config={},
+            existing_lxd_unmanaged=False, 
             inside_container=False,
             lxd_binary_path="",
             lxd_clustered=False,
@@ -563,6 +571,7 @@ class LxdCharm(CharmBase):
             return
 
         if self._adoption.should_adopt_existing():
+            self._stored.existing_lxd_unmanaged = True
             try:
                 self._adoption.adopt_existing_lxd()
                 logger.info("Existing LXD adopted successfully")
