@@ -69,16 +69,36 @@ requires:
 
 type: charm
 platforms:
-  ubuntu@24.04:amd64:
-  ubuntu@24.04:arm64:
-  ubuntu@24.04:armhf:
-  ubuntu@24.04:ppc64el:
-  ubuntu@24.04:s390x:
-  ubuntu@22.04:amd64:
-  ubuntu@22.04:arm64:
-  ubuntu@22.04:armhf:
-  ubuntu@22.04:ppc64el:
-  ubuntu@22.04:s390x:
+  ubuntu@24.04-amd64:
+    build-on: [ubuntu@24.04:amd64]
+    build-for: [ubuntu@24.04:amd64]
+  ubuntu@24.04-arm64:
+    build-on: [ubuntu@24.04:arm64]
+    build-for: [ubuntu@24.04:arm64]
+  ubuntu@24.04-armhf:
+    build-on: [ubuntu@24.04:armhf]
+    build-for: [ubuntu@24.04:armhf]
+  ubuntu@24.04-ppc64el:
+    build-on: [ubuntu@24.04:ppc64el]
+    build-for: [ubuntu@24.04:ppc64el]
+  ubuntu@24.04-s390x:
+    build-on: [ubuntu@24.04:s390x]
+    build-for: [ubuntu@24.04:s390x]
+  ubuntu@22.04-amd64:
+    build-on: [ubuntu@22.04:amd64]
+    build-for: [ubuntu@22.04:amd64]
+  ubuntu@22.04-arm64:
+    build-on: [ubuntu@22.04:arm64]
+    build-for: [ubuntu@22.04:arm64]
+  ubuntu@22.04-armhf:
+    build-on: [ubuntu@22.04:armhf]
+    build-for: [ubuntu@22.04:armhf]
+  ubuntu@22.04-ppc64el:
+    build-on: [ubuntu@22.04:ppc64el]
+    build-for: [ubuntu@22.04:ppc64el]
+  ubuntu@22.04-s390x:
+    build-on: [ubuntu@22.04:s390x]
+    build-for: [ubuntu@22.04:s390x]
 
 charm-libs:
   - lib: grafana-k8s.grafana_dashboard
