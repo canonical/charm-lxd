@@ -2,6 +2,7 @@
 
 """LXD charm."""
 
+import base64
 import ipaddress
 import json
 import logging
@@ -1619,25 +1620,29 @@ class LxdCharm(CharmBase):
 
     def lxd_cluster_add_token(self, hostname: str) -> str:
         """Add/issue a join token for `hostname`."""
-        c = subprocess.run(
-            ["lxc", "cluster", "add", hostname],
-            capture_output=True,
-            check=False,
-            encoding="UTF-8",
-            timeout=600,
-        )
-        if c.returncode != 0 or not c.stdout:
-            logger.error(
-                f'The command "lxc cluster add {hostname}" did not produce '
-                f"any output (rc={c.returncode}, error={c.stderr})"
-            )
-            return ""
-
+        client = pylxd.Client()
         try:
-            token = c.stdout.splitlines()[1]
-        except IndexError:
+            response = client.api.cluster.members.post(json={"server_name": hostname})
+            data = response.json()
+            meta = data["metadata"]["metadata"]
+            join_token_dict = {
+                "server_name": meta["serverName"],
+                "fingerprint": meta["fingerprint"],
+                "addresses": meta["addresses"],
+                "secret": meta["secret"],
+                "expires_at": meta["expiresAt"],
+            }
+            token: str = base64.b64encode(json.dumps(join_token_dict).encode()).decode()
+        except pylxd.exceptions.LXDAPIException as e:
+            logger.error(f"Failed to issue cluster join token for {hostname}: {e}")
+            return ""
+        except KeyError as e:
+            logger.error(f"Failed to parse cluster join token for {hostname}: missing key {e}")
             return ""
 
+        if not token:
+            logger.error(f"Cluster join token for {hostname} is empty")
+            return ""
         return token
 
     def lxd_apply_preseed(self, preseed_yaml: bytes) -> None:
