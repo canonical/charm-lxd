@@ -118,10 +118,13 @@ jobs:
             ./.github/scripts/charmcraft-tweak.py "${dir}" "cargo-1.85,libffi-dev,libssl-dev,pkg-config,python3-dev,rustc-1.85"
           done
 
-          charmcraft pack -v
+          # XXX: building the ancillary charm first to workaround a caching issue with charmcraft pack:
+          # https://github.com/canonical/charmcraft/issues/2631
 
           echo "==> ancillary charm for testing purposes"
           charmcraft pack -v --project-dir examples/https-client
+
+          charmcraft pack -v
 
           echo "==> cleanup project to reclaim space"
           lxc project delete --force charmcraft
