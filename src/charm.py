@@ -805,10 +805,40 @@ class LxdCharm(CharmBase):
             logger.error(f"Unable to add a join token for hostname={hostname}")
             return
 
-        # Remove the "description" from member_config to reduce the size of the data bag
-        member_config: List[Dict] = pylxd.Client().cluster.get().member_config
+        # Mangle the member_config
+        client = pylxd.Client()
+        member_config: List[Dict] = client.cluster.get().member_config
         for c in member_config:
+            # Remove the "description" from member_config to reduce the size of the data bag
             _ = c.pop("description", None)
+            if c.get("entity") == "storage-pool" and c.get("key") == "source":
+                pool_name: str = c.get("name", "")
+                if not pool_name:
+                    continue
+                try:
+                    # Replace any member-specific source values (e.g., BTRFS
+                    # subvolume UUIDs) with the stable device path from
+                    # volatile.initial_source so joining members can use it
+                    # regardless of whether they have a Juju block storage
+                    # attached.
+                    # Note: volatile.initial_source is only available when
+                    # querying with --target, not from the global pool config.
+                    my_hostname: str = os.uname().nodename
+                    pool_config: Dict = (
+                        client.api.storage_pools[pool_name]
+                        .get(params={"target": my_hostname})
+                        .json()["metadata"]["config"]
+                    )
+                    initial_source: str = pool_config.get("volatile.initial_source", "")
+                    current_value: str = c.get("value", "")
+                    if initial_source and current_value != initial_source:
+                        logger.debug(
+                            f"Replacing member_config source for pool {pool_name!r} "
+                            f"from {current_value!r} to {initial_source!r}"
+                        )
+                        c["value"] = initial_source
+                except pylxd.exceptions.LXDAPIException as e:
+                    logger.warning(f"Unable to get pool config for {pool_name!r}: {e}")
 
         # XXX: the members dict maintains an assiciation between the Juju unit name
         #      and the LXD cluster member name (hostname/uname). This is needed when
