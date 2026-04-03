@@ -33,9 +33,6 @@ jobs:
       with:
         persist-credentials: false
 
-    - name: Require GHA pinning
-      uses: canonical/lxd/.github/actions/require-gha-pinning@main
-
     - name: Install dependencies
       run: |
           set -x
@@ -48,8 +45,8 @@ jobs:
     - name: Run linters
       run: tox -vve lint
 
-  integration-tests:
-    name: Juju tests
+  build:
+    name: Build charms
     runs-on: ubuntu-24.04
     needs:
     - static-analysis
@@ -60,7 +57,7 @@ jobs:
         persist-credentials: false
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@main
+      uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
       with:
         channel: latest/edge
         preseed: |
@@ -102,7 +99,6 @@ jobs:
           set -x
 
           sudo snap install charmcraft --classic
-          sudo snap install juju
 
           snap list --all
 
@@ -134,12 +130,77 @@ jobs:
         path: ./*.charm
         retention-days: 5
 
+  standalone:
+    name: Standalone tests
+    runs-on: ubuntu-24.04
+    needs:
+    - build
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+
+    - name: Setup LXD
+      uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
+      with:
+        channel: latest/edge
+        preseed: |
+          config:
+            images.compression_algorithm: none
+          networks:
+          - config:
+              ipv4.address: auto
+              ipv6.address: auto
+            description: ""
+            name: lxdbr0
+            type: ""
+            project: default
+          storage_pools:
+          - config:
+              size: 10GiB
+            description: ""
+            name: default
+            driver: zfs
+          storage_volumes: []
+          profiles:
+          - config: {}
+            description: ""
+            devices:
+              eth0:
+                name: eth0
+                network: lxdbr0
+                type: nic
+              root:
+                path: /
+                pool: default
+                type: disk
+            name: default
+          projects: []
+          cluster: null
+
+    - name: Install dependencies
+      run: |
+          set -x
+
+          sudo snap install juju
+
+          snap list --all
+
+    - name: Download charms
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: charms
+        path: .
+
     - name: Bootstrap Juju
       run: |
           set -eux
           juju bootstrap lxd local
+          juju add-model ci-testing
+          juju model-config logging-config="<root>=WARNING;unit=DEBUG"
 
-    - name: Exercice lxd-https relation
+    - name: Exercise lxd-https relation
       run: |
           set -eux
           STEP_NAME="lxd-https relation"
@@ -162,9 +223,6 @@ jobs:
               exit "$rc"
           }
           trap debug err exit
-
-          juju add-model ci-testing
-          juju model-config logging-config="<root>=WARNING;unit=DEBUG"
 
           echo "==> Test 22.04 charm in standalone mode"
           juju deploy ./lxd_ubuntu@22.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
@@ -272,6 +330,94 @@ jobs:
           sleep 10
           juju status
 
+    - name: Check for errors
+      run: |
+          set -eux
+          if juju status --format=oneline | grep -qF workload:error; then
+              echo "Juju failed to deploy"
+              juju status --format=oneline
+              exit 1
+          fi
+
+    - name: Juju debug-log
+      if: always()
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: juju-debug-logs ${{ github.job }}
+        path: juju-debug.log
+        if-no-files-found: ignore
+        retention-days: 5
+
+  cluster:
+    name: Cluster tests
+    runs-on: ubuntu-22.04
+    needs:
+    - build
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+
+    - name: Setup LXD
+      uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
+      with:
+        channel: latest/edge
+        preseed: |
+          config:
+            images.compression_algorithm: none
+          networks:
+          - config:
+              ipv4.address: auto
+              ipv6.address: auto
+            description: ""
+            name: lxdbr0
+            type: ""
+            project: default
+          storage_pools:
+          - config:
+              size: 10GiB
+            description: ""
+            name: default
+            driver: zfs
+          storage_volumes: []
+          profiles:
+          - config: {}
+            description: ""
+            devices:
+              eth0:
+                name: eth0
+                network: lxdbr0
+                type: nic
+              root:
+                path: /
+                pool: default
+                type: disk
+            name: default
+          projects: []
+          cluster: null
+
+    - name: Install dependencies
+      run: |
+          set -x
+
+          sudo snap install juju
+
+          snap list --all
+
+    - name: Download charms
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: charms
+        path: .
+
+    - name: Bootstrap Juju
+      run: |
+          set -eux
+          juju bootstrap lxd local
+          juju add-model ci-testing
+          juju model-config logging-config="<root>=WARNING;unit=DEBUG"
+
     - name: Cluster tests
       run: |
           set -eux
@@ -366,4 +512,5 @@ jobs:
       with:
         name: juju-debug-logs ${{ github.job }}
         path: juju-debug.log
+        if-no-files-found: ignore
         retention-days: 5
