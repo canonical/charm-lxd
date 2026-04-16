@@ -57,7 +57,7 @@ jobs:
         persist-credentials: false
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
+      uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
         preseed: |
@@ -142,7 +142,7 @@ jobs:
         persist-credentials: false
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
+      uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
         preseed: |
@@ -360,7 +360,7 @@ jobs:
         persist-credentials: false
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
+      uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
         preseed: |
