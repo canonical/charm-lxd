@@ -35,7 +35,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-          set -x
+          set -eux
           sudo apt-get update
           sudo apt-get install --no-install-recommends tox
 
@@ -96,10 +96,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-          set -x
-
+          set -eux
           sudo snap install charmcraft --classic
-
           snap list --all
 
     - name: Build charms
@@ -181,10 +179,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-          set -x
-
+          set -eux
           sudo snap install juju
-
           snap list --all
 
     - name: Download charms
@@ -399,10 +395,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-          set -x
-
+          set -eux
           sudo snap install juju
-
           snap list --all
 
     - name: Download charms
