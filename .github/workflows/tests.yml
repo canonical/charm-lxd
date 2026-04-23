@@ -24,7 +24,7 @@ defaults:
 jobs:
   static-analysis:
     # Do not run static analysis on schedule for forks
-    if: github.event_name != 'schedule' || github.repository == 'canonical/charm-lxd'
+    if: github.event_name != 'schedule' || github.repository_owner == 'canonical'
     name: Static analysis
     runs-on: ubuntu-slim
     steps:
