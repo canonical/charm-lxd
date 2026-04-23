@@ -1745,7 +1745,7 @@ class LxdCharm(CharmBase):
 
         self.unit_active()
         self._stored.lxd_clustered = True
-        logger.debug(f"Cluster joined successfully consuming the token: {token}")
+        logger.debug("Cluster joined successfully (join token consumed)")
 
     def lxd_cluster_remove(self, member: str) -> None:
         """Remove a member from the cluster.
