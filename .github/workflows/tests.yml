@@ -56,43 +56,18 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Read LXD preseed
+      id: read_preseed
+      run: |
+        echo "preseed<<EOF" >> $GITHUB_OUTPUT
+        cat .github/preseed/lxd-preseed.yaml >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Setup LXD
       uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
-        preseed: |
-          config:
-            images.compression_algorithm: none
-          networks:
-          - config:
-              ipv4.address: auto
-              ipv6.address: auto
-            description: ""
-            name: lxdbr0
-            type: ""
-            project: default
-          storage_pools:
-          - config:
-              size: 10GiB
-            description: ""
-            name: default
-            driver: zfs
-          storage_volumes: []
-          profiles:
-          - config: {}
-            description: ""
-            devices:
-              eth0:
-                name: eth0
-                network: lxdbr0
-                type: nic
-              root:
-                path: /
-                pool: default
-                type: disk
-            name: default
-          projects: []
-          cluster: null
+        preseed: ${{ steps.read_preseed.outputs.preseed }}
 
     - name: Install dependencies
       run: |
@@ -139,43 +114,18 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Read LXD preseed
+      id: read_preseed
+      run: |
+        echo "preseed<<EOF" >> $GITHUB_OUTPUT
+        cat .github/preseed/lxd-preseed.yaml >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Setup LXD
       uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
-        preseed: |
-          config:
-            images.compression_algorithm: none
-          networks:
-          - config:
-              ipv4.address: auto
-              ipv6.address: auto
-            description: ""
-            name: lxdbr0
-            type: ""
-            project: default
-          storage_pools:
-          - config:
-              size: 10GiB
-            description: ""
-            name: default
-            driver: zfs
-          storage_volumes: []
-          profiles:
-          - config: {}
-            description: ""
-            devices:
-              eth0:
-                name: eth0
-                network: lxdbr0
-                type: nic
-              root:
-                path: /
-                pool: default
-                type: disk
-            name: default
-          projects: []
-          cluster: null
+        preseed: ${{ steps.read_preseed.outputs.preseed }}
 
     - name: Install dependencies
       run: |
@@ -338,43 +288,18 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Read LXD preseed
+      id: read_preseed
+      run: |
+        echo "preseed<<EOF" >> $GITHUB_OUTPUT
+        cat .github/preseed/lxd-preseed.yaml >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Setup LXD
       uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
-        preseed: |
-          config:
-            images.compression_algorithm: none
-          networks:
-          - config:
-              ipv4.address: auto
-              ipv6.address: auto
-            description: ""
-            name: lxdbr0
-            type: ""
-            project: default
-          storage_pools:
-          - config:
-              size: 10GiB
-            description: ""
-            name: default
-            driver: zfs
-          storage_volumes: []
-          profiles:
-          - config: {}
-            description: ""
-            devices:
-              eth0:
-                name: eth0
-                network: lxdbr0
-                type: nic
-              root:
-                path: /
-                pool: default
-                type: disk
-            name: default
-          projects: []
-          cluster: null
+        preseed: ${{ steps.read_preseed.outputs.preseed }}
 
     - name: Install dependencies
       run: |
