@@ -2308,7 +2308,7 @@ class LxdCharm(CharmBase):
         logger.debug(msg)
 
         try:
-            client.api.patch(f'{{"config": {{"core.{listener}_address": "{addr}"}}}}')
+            client.api.patch(json={"config": {f"core.{listener}_address": addr}})
         except Exception as e:
             logger.error(f"Failed to set listener: {e}")
             return False
