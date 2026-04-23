@@ -1,5 +1,5 @@
 cosl >= 0.0.7
-ops >= 1.2.0
+ops >= 2.23.2
 git+https://github.com/canonical/pylxd@main#egg=pylxd
 pyopenssl
 python-logging-loki
