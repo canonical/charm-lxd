@@ -2439,6 +2439,8 @@ class LxdCharm(CharmBase):
             # Note: self._stored can only store simple data types (int/float/dict/list/etc)
             lxd_snap_resource = str(self.model.resources.fetch("lxd-snap"))
         except ModelError:
+            # The lxd-snap resource is optional; if not provided by the charm deployment,
+            # the charm will continue to function without it.
             pass
 
         tmp_dir: str = ""
@@ -2471,6 +2473,8 @@ class LxdCharm(CharmBase):
             # Note: self._stored can only store simple data types (int/float/dict/list/etc)
             lxd_binary_resource = str(self.model.resources.fetch("lxd-binary"))
         except ModelError:
+            # The lxd-binary resource is optional; if not provided by the charm deployment,
+            # the charm will continue to function without it.
             pass
 
         tmp_dir = ""
