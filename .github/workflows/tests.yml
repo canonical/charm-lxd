@@ -24,7 +24,7 @@ defaults:
 jobs:
   static-analysis:
     # Do not run static analysis on schedule for forks
-    if: github.event_name != 'schedule' || github.repository == 'canonical/charm-lxd'
+    if: github.event_name != 'schedule' || github.repository_owner == 'canonical'
     name: Static analysis
     runs-on: ubuntu-slim
     steps:
@@ -35,7 +35,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-          set -x
+          set -eux
           sudo apt-get update
           sudo apt-get install --no-install-recommends tox
 
@@ -56,50 +56,23 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Read LXD preseed
+      id: read_preseed
+      run: |
+        echo "preseed<<EOF" >> $GITHUB_OUTPUT
+        cat .github/preseed/lxd-preseed.yaml >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Setup LXD
       uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
-        preseed: |
-          config:
-            images.compression_algorithm: none
-          networks:
-          - config:
-              ipv4.address: auto
-              ipv6.address: auto
-            description: ""
-            name: lxdbr0
-            type: ""
-            project: default
-          storage_pools:
-          - config:
-              size: 10GiB
-            description: ""
-            name: default
-            driver: zfs
-          storage_volumes: []
-          profiles:
-          - config: {}
-            description: ""
-            devices:
-              eth0:
-                name: eth0
-                network: lxdbr0
-                type: nic
-              root:
-                path: /
-                pool: default
-                type: disk
-            name: default
-          projects: []
-          cluster: null
+        preseed: ${{ steps.read_preseed.outputs.preseed }}
 
     - name: Install dependencies
       run: |
-          set -x
-
+          set -eux
           sudo snap install charmcraft --classic
-
           snap list --all
 
     - name: Build charms
@@ -141,50 +114,23 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Read LXD preseed
+      id: read_preseed
+      run: |
+        echo "preseed<<EOF" >> $GITHUB_OUTPUT
+        cat .github/preseed/lxd-preseed.yaml >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Setup LXD
       uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
-        preseed: |
-          config:
-            images.compression_algorithm: none
-          networks:
-          - config:
-              ipv4.address: auto
-              ipv6.address: auto
-            description: ""
-            name: lxdbr0
-            type: ""
-            project: default
-          storage_pools:
-          - config:
-              size: 10GiB
-            description: ""
-            name: default
-            driver: zfs
-          storage_volumes: []
-          profiles:
-          - config: {}
-            description: ""
-            devices:
-              eth0:
-                name: eth0
-                network: lxdbr0
-                type: nic
-              root:
-                path: /
-                pool: default
-                type: disk
-            name: default
-          projects: []
-          cluster: null
+        preseed: ${{ steps.read_preseed.outputs.preseed }}
 
     - name: Install dependencies
       run: |
-          set -x
-
+          set -eux
           sudo snap install juju
-
           snap list --all
 
     - name: Download charms
@@ -203,26 +149,7 @@ jobs:
     - name: Exercise lxd-https relation
       run: |
           set -eux
-          STEP_NAME="lxd-https relation"
-          echo "# === $STEP_NAME starts === #" >> juju-debug.log
-
-          waitForApps() {
-            for app in "${@}"; do
-              juju wait-for application "${app}" --query='life=="alive" && status=="active" && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || true
-            done
-            juju status --relations
-          }
-
-          # capture juju's logs on error
-          debug() {
-              rc="$?"
-              set +e
-              juju debug-log --replay --level debug >> juju-debug.log
-              echo "# === $STEP_NAME ends === #" >> juju-debug.log
-              juju status --relations >> juju-debug.log
-              exit "$rc"
-          }
-          trap debug err exit
+          . .github/scripts/ci-helpers.sh
 
           echo "==> Test 22.04 charm in standalone mode"
           juju deploy ./lxd_ubuntu@22.04-amd64.charm --num-units 1 --config lxd-listen-https=true --config snap-channel="5.0/stable"
@@ -279,6 +206,7 @@ jobs:
     - name: Test opening/closing ports
       run: |
           set -eux
+          . .github/scripts/ci-helpers.sh
           echo "==> open the dns, bgp and metrics ports"
           juju config lxd lxd-listen-dns=true lxd-listen-bgp=true lxd-listen-metrics=true
           juju wait-for application lxd --query='status=="active"'
@@ -297,6 +225,8 @@ jobs:
     - name: Scale the number of lxd units
       run: |
           set -eux
+          . .github/scripts/ci-helpers.sh
+
           echo "==> Add a LXD unit"
           juju add-unit lxd
           juju wait-for application lxd --query='status=="active"'
@@ -305,6 +235,7 @@ jobs:
     - name: Test add-trusted-client/remove-trusted-client actions
       run: |
           set -eux
+          . .github/scripts/ci-helpers.sh
           CERT_NAME="trusted-client-$$"
 
           echo "==> Generate local cert/key"
@@ -326,6 +257,7 @@ jobs:
     - name: Cleanup standalone lxd units
       run: |
           set -eux
+          . .github/scripts/ci-helpers.sh
           juju remove-application --no-prompt --force lxd
           sleep 10
           juju status
@@ -333,11 +265,8 @@ jobs:
     - name: Check for errors
       run: |
           set -eux
-          if juju status --format=oneline | grep -qF workload:error; then
-              echo "Juju failed to deploy"
-              juju status --format=oneline
-              exit 1
-          fi
+          . .github/scripts/ci-helpers.sh
+          checkForErrors
 
     - name: Juju debug-log
       if: always()
@@ -359,50 +288,23 @@ jobs:
       with:
         persist-credentials: false
 
+    - name: Read LXD preseed
+      id: read_preseed
+      run: |
+        echo "preseed<<EOF" >> $GITHUB_OUTPUT
+        cat .github/preseed/lxd-preseed.yaml >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
     - name: Setup LXD
       uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
       with:
         channel: latest/edge
-        preseed: |
-          config:
-            images.compression_algorithm: none
-          networks:
-          - config:
-              ipv4.address: auto
-              ipv6.address: auto
-            description: ""
-            name: lxdbr0
-            type: ""
-            project: default
-          storage_pools:
-          - config:
-              size: 10GiB
-            description: ""
-            name: default
-            driver: zfs
-          storage_volumes: []
-          profiles:
-          - config: {}
-            description: ""
-            devices:
-              eth0:
-                name: eth0
-                network: lxdbr0
-                type: nic
-              root:
-                path: /
-                pool: default
-                type: disk
-            name: default
-          projects: []
-          cluster: null
+        preseed: ${{ steps.read_preseed.outputs.preseed }}
 
     - name: Install dependencies
       run: |
-          set -x
-
+          set -eux
           sudo snap install juju
-
           snap list --all
 
     - name: Download charms
@@ -418,34 +320,10 @@ jobs:
           juju add-model ci-testing
           juju model-config logging-config="<root>=WARNING;unit=DEBUG"
 
-    - name: Cluster tests
+    - name: Cluster - deploy and verify
       run: |
           set -eux
-          STEP_NAME="cluster tests"
-          echo "# === $STEP_NAME starts === #" >> juju-debug.log
-
-          # capture juju's logs on error
-          debug() {
-              rc="$?"
-              set +e
-              juju debug-log --replay --level debug >> juju-debug.log
-              echo "# === $STEP_NAME ends === #" >> juju-debug.log
-              juju status --relations >> juju-debug.log
-              exit "$rc"
-          }
-          trap debug err exit
-
-          waitForApps() {
-            for app in "${@}"; do
-              juju wait-for application "${app}" --query='life=="alive" && status=="active" && forEach(units, unit => unit.workload-status == "active" && unit.agent-status == "idle")' || true
-            done
-            juju status --relations
-          }
-
-          checkOnlineMembers() {
-              NODE_JOINED="$(juju exec --unit lxd/leader -- lxc cluster list --format csv | grep -cF ',ONLINE,Fully operational')"
-              [ "$NODE_JOINED" -eq "$NODE_CREATED" ]
-          }
+          . .github/scripts/ci-helpers.sh
 
           echo "==> Test 24.04 charm in cluster mode"
           NODE_CREATED="2"
@@ -453,12 +331,17 @@ jobs:
           waitForApps lxd
 
           echo "==> Check that all members are online and fully operational"
-          checkOnlineMembers
+          checkOnlineMembers "${NODE_CREATED}"
 
           echo "Cleanup cluster lxd units"
           juju remove-application --no-prompt --force lxd
           sleep 10
           juju status
+
+    - name: Cluster with preseed
+      run: |
+          set -eux
+          . .github/scripts/ci-helpers.sh
 
           echo "==> Test 24.04 charm in cluster mode with preseed"
           NODE_CREATED="2"
@@ -466,12 +349,17 @@ jobs:
           waitForApps lxd
 
           echo "==> Check that all members are online and fully operational"
-          checkOnlineMembers
+          checkOnlineMembers "${NODE_CREATED}"
 
           echo "==> Check the preseed was applied"
           juju exec --unit lxd/leader -- lxc profile show default
           [ "$(juju exec --unit lxd/leader -- lxc profile device get default eth0 network)" = "br0" ]
           [ "$(juju exec --unit lxd/leader -- lxc profile device get default root pool)" = "data" ]
+
+    - name: Cluster expansion
+      run: |
+          set -eux
+          . .github/scripts/ci-helpers.sh
 
           echo "==> Grow the cluster"
           NODE_CREATED="3"
@@ -479,11 +367,12 @@ jobs:
           waitForApps lxd
 
           echo "==> Check that all members are online and fully operational"
-          checkOnlineMembers
+          checkOnlineMembers "${NODE_CREATED}"
 
     - name: Test get-client-token action
       run: |
           set -eux
+          . .github/scripts/ci-helpers.sh
           CERT_NAME="get-client-token-$$"
           REMOTE_NAME="rmt-$$"
 
@@ -500,11 +389,8 @@ jobs:
     - name: Check for errors
       run: |
           set -eux
-          if juju status --format=oneline | grep -qF workload:error; then
-              echo "Juju failed to deploy"
-              juju status --format=oneline
-              exit 1
-          fi
+          . .github/scripts/ci-helpers.sh
+          checkForErrors
 
     - name: Juju debug-log
       if: always()
