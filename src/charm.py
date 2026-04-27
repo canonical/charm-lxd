@@ -840,7 +840,7 @@ class LxdCharm(CharmBase):
                 except pylxd.exceptions.LXDAPIException as e:
                     logger.warning(f"Unable to get pool config for {pool_name!r}: {e}")
 
-        # XXX: the members dict maintains an assiciation between the Juju unit name
+        # XXX: the members dict maintains an association between the Juju unit name
         #      and the LXD cluster member name (hostname/uname). This is needed when
         #      removing cluster members when they depart from the relation.
 
@@ -853,10 +853,10 @@ class LxdCharm(CharmBase):
             logger.debug(f"Initializing the members list with {self.unit.name} ({my_hostname})")
             members = {self.unit.name: my_hostname}
 
-        # Check for hostname colisions
+        # Check for hostname collisions
         for unit_name, unit_hostname in members.items():
             if hostname == unit_hostname:
-                logger.error(f"Hostname colision with {unit_name} ({hostname})")
+                logger.error(f"Hostname collision with {unit_name} ({hostname})")
                 return
 
         logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
@@ -1515,7 +1515,7 @@ class LxdCharm(CharmBase):
         """Return the primary IP address of network space.
 
         If require_ipv4 is True, return the first IPv4 available
-        in the network space, if any, an emtpy string otherwise.
+        in the network space, if any, an empty string otherwise.
         """
         binding = self.model.get_binding(space_name)
         if not binding:
