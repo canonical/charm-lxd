@@ -1523,8 +1523,14 @@ class LxdCharm(CharmBase):
 
         net = binding.network
 
-        # ingress_addresses can contains strings (hostnames) while we only want IPs
-        addrs = [a for a in net.ingress_addresses if not isinstance(a, str)]
+        # ingress_addresses can contain hostnames; keep only values that parse as IPs
+        addrs = []
+        for a in net.ingress_addresses:
+            try:
+                addrs.append(ipaddress.ip_address(str(a)))
+            except ValueError:
+                # Not an IP address, skip it
+                continue
         if not addrs:
             return ""
 
