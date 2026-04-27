@@ -840,7 +840,7 @@ class LxdCharm(CharmBase):
                 except pylxd.exceptions.LXDAPIException as e:
                     logger.warning(f"Unable to get pool config for {pool_name!r}: {e}")
 
-        # XXX: the members dict maintains an assiciation between the Juju unit name
+        # XXX: the members dict maintains an association between the Juju unit name
         #      and the LXD cluster member name (hostname/uname). This is needed when
         #      removing cluster members when they depart from the relation.
 
@@ -853,10 +853,10 @@ class LxdCharm(CharmBase):
             logger.debug(f"Initializing the members list with {self.unit.name} ({my_hostname})")
             members = {self.unit.name: my_hostname}
 
-        # Check for hostname colisions
+        # Check for hostname collisions
         for unit_name, unit_hostname in members.items():
             if hostname == unit_hostname:
-                logger.error(f"Hostname colision with {unit_name} ({hostname})")
+                logger.error(f"Hostname collision with {unit_name} ({hostname})")
                 return
 
         logger.debug(f"Adding {event.unit.name} ({hostname}) to members list")
@@ -1515,7 +1515,7 @@ class LxdCharm(CharmBase):
         """Return the primary IP address of network space.
 
         If require_ipv4 is True, return the first IPv4 available
-        in the network space, if any, an emtpy string otherwise.
+        in the network space, if any, an empty string otherwise.
         """
         binding = self.model.get_binding(space_name)
         if not binding:
@@ -1523,8 +1523,14 @@ class LxdCharm(CharmBase):
 
         net = binding.network
 
-        # ingress_addresses can contains strings (hostnames) while we only want IPs
-        addrs = [a for a in net.ingress_addresses if not isinstance(a, str)]
+        # ingress_addresses can contain hostnames; keep only values that parse as IPs
+        addrs = []
+        for a in net.ingress_addresses:
+            try:
+                addrs.append(ipaddress.ip_address(str(a)))
+            except ValueError:
+                # Not an IP address, skip it
+                continue
         if not addrs:
             return ""
 
@@ -2110,8 +2116,8 @@ class LxdCharm(CharmBase):
                 # Configure the storage
                 if configure_storage:
                     if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
-                        src = f"source={self.model.storages['local'][0].location}"
-                        self.unit_maintenance("Configuring external storage pool (zfs, {src})")
+                        src = str(self.model.storages["local"][0].location)
+                        self.unit_maintenance(f"Configuring external storage pool (zfs, {src})")
                         client.storage_pools.create(
                             {
                                 "name": "local",
