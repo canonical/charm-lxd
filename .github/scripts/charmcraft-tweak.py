@@ -81,7 +81,8 @@ def rewrite_charmcraft(directory: str, unneeded_build_pkgs: list[str]) -> None:
         charmcraft["parts"]["charm"]["charm-binary-python-packages"] = []
     charmcraft["parts"]["charm"]["charm-binary-python-packages"] += requirements
 
-    yaml.dump(charmcraft, open(charmcraft_yaml, "w"), sort_keys=False)
+    with open(charmcraft_yaml, "w") as f:
+        yaml.dump(charmcraft, f, sort_keys=False)
 
 
 if __name__ == "__main__":
