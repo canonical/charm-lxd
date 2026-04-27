@@ -2116,8 +2116,8 @@ class LxdCharm(CharmBase):
                 # Configure the storage
                 if configure_storage:
                     if "local" in self.model.storages and len(self.model.storages["local"]) == 1:
-                        src = f"source={self.model.storages['local'][0].location}"
-                        self.unit_maintenance("Configuring external storage pool (zfs, {src})")
+                        src = str(self.model.storages["local"][0].location)
+                        self.unit_maintenance(f"Configuring external storage pool (zfs, {src})")
                         client.storage_pools.create(
                             {
                                 "name": "local",
