@@ -1751,7 +1751,7 @@ class LxdCharm(CharmBase):
 
         self.unit_active()
         self._stored.lxd_clustered = True
-        logger.debug(f"Cluster joined successfully consuming the token: {token}")
+        logger.debug("Cluster joined successfully (join token consumed)")
 
     def lxd_cluster_remove(self, member: str) -> None:
         """Remove a member from the cluster.
@@ -1786,47 +1786,53 @@ class LxdCharm(CharmBase):
             logger.error('The name cannot contain a "/".')
             return ("", "")
 
-        cmd: List[str] = [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "ec",
-            "-pkeyopt",
-            "ec_paramgen_curve:secp384r1",
-            "-sha384",
-            "-keyout",
-            "-",
-            "-out",
-            "certificate.crt",
-            "-nodes",
-            "-subj",
-            f"/CN={name}",
-            "-days",
-            "+3650",
-        ]
-        try:
-            c = subprocess.run(
-                cmd,
-                capture_output=True,
-                check=True,
-                encoding="UTF-8",
-                timeout=600,
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
-            return ("", "")
-        except subprocess.TimeoutExpired as e:
-            logger.error(f"Timeout exceeded while running {e.cmd!r}")
-            return ("", "")
+        # Create a secure temporary directory that automatically gets cleaned
+        # up, and generate the cert/key pair there to avoid any risk of leaking
+        # them in case of failure.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cert_path = os.path.join(temp_dir, "certificate.crt")
 
-        # The key data was output to stdout and never touched the disk
-        # but the certificate data needs to be read from the file that
-        # can then be discarded
-        key: str = c.stdout
-        with open("certificate.crt") as f:
-            cert: str = f.read()
-        os.remove("certificate.crt")
+            cmd: List[str] = [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "ec",
+                "-pkeyopt",
+                "ec_paramgen_curve:secp384r1",
+                "-sha384",
+                "-keyout",
+                "-",
+                "-out",
+                cert_path,
+                "-nodes",
+                "-subj",
+                f"/CN={name}",
+                "-days",
+                "+3650",
+            ]
+            try:
+                c = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    check=True,
+                    encoding="UTF-8",
+                    timeout=600,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
+                return ("", "")
+            except subprocess.TimeoutExpired as e:
+                logger.error(f"Timeout exceeded while running {e.cmd!r}")
+                return ("", "")
+
+            # The key data was output to stdout and never touched the disk
+            # but the certificate data needs to be read from the file that
+            # can then be discarded
+            key: str = c.stdout
+
+            with open(cert_path) as f:
+                cert: str = f.read()
 
         return (cert, key)
 
@@ -2314,7 +2320,7 @@ class LxdCharm(CharmBase):
         logger.debug(msg)
 
         try:
-            client.api.patch(f'{{"config": {{"core.{listener}_address": "{addr}"}}}}')
+            client.api.patch(json={"config": {f"core.{listener}_address": addr}})
         except Exception as e:
             logger.error(f"Failed to set listener: {e}")
             return False

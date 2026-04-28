@@ -279,7 +279,7 @@ jobs:
 
   cluster:
     name: Cluster tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
     - build
     steps:
@@ -327,7 +327,7 @@ jobs:
 
           echo "==> Test 24.04 charm in cluster mode"
           NODE_CREATED="2"
-          juju deploy ./lxd_ubuntu@24.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true
+          juju deploy ./lxd_ubuntu@24.04-amd64.charm --num-units "${NODE_CREATED}" --config mode=cluster --config snap-channel="latest/edge" --config lxd-listen-https=true
           waitForApps lxd
 
           echo "==> Check that all members are online and fully operational"
@@ -345,7 +345,7 @@ jobs:
 
           echo "==> Test 24.04 charm in cluster mode with preseed"
           NODE_CREATED="2"
-          juju deploy ./lxd_ubuntu@24.04-amd64.charm --num-units "$NODE_CREATED" --config mode=cluster --config lxd-listen-https=true --config lxd-preseed="$(cat examples/cluster-preseed.yaml)"
+          juju deploy ./lxd_ubuntu@24.04-amd64.charm --num-units "${NODE_CREATED}" --config mode=cluster --config snap-channel="latest/candidate" --config lxd-listen-https=true --config lxd-preseed="$(cat examples/cluster-preseed.yaml)"
           waitForApps lxd
 
           echo "==> Check that all members are online and fully operational"
