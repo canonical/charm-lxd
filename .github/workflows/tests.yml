@@ -64,7 +64,7 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
+      uses: canonical/setup-lxd@da2ac84e727dc534215fd14cd088b9209d65893b # main
       with:
         channel: latest/edge
         preseed: ${{ steps.read_preseed.outputs.preseed }}
@@ -122,7 +122,7 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
+      uses: canonical/setup-lxd@da2ac84e727dc534215fd14cd088b9209d65893b # main
       with:
         channel: latest/edge
         preseed: ${{ steps.read_preseed.outputs.preseed }}
@@ -296,7 +296,7 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
 
     - name: Setup LXD
-      uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
+      uses: canonical/setup-lxd@da2ac84e727dc534215fd14cd088b9209d65893b # main
       with:
         channel: latest/edge
         preseed: ${{ steps.read_preseed.outputs.preseed }}
