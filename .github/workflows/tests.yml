@@ -90,7 +90,9 @@ jobs:
           charmcraft pack -v
 
           echo "==> ancillary charm for testing purposes"
-          charmcraft pack -v --project-dir examples/https-client
+          # XXX: workaround https://github.com/canonical/charmcraft/issues/2620 by avoiding --project-dir
+          (cd examples/https-client && charmcraft pack -v)
+          mv examples/https-client/*.charm .
 
           echo "==> cleanup project to reclaim space"
           lxc project delete --force charmcraft
