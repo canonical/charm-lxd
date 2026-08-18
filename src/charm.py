@@ -213,22 +213,22 @@ class LxdCharm(CharmBase):
         """Fetch the cluster relation."""
         return self.model.get_relation("cluster")
 
-    def get_peer_data_dict(self, bag, key: str) -> Dict:
+    def get_peer_data_dict(self, bag, key: str) -> dict:
         """Retrieve a dict from the peer data bag."""
         if not self.peers or not bag or not key:
             return {}
         value = json.loads(self.peers.data[bag].get(key, "{}"))
-        if isinstance(value, Dict):
+        if isinstance(value, dict):
             return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return {}
 
-    def get_peer_data_list(self, bag, key: str) -> List:
+    def get_peer_data_list(self, bag, key: str) -> list:
         """Retrieve a list from the peer data bag."""
         if not self.peers or not bag or not key:
             return []
         value = json.loads(self.peers.data[bag].get(key, "[]"))
-        if isinstance(value, List):
+        if isinstance(value, list):
             return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return []
@@ -253,21 +253,21 @@ class LxdCharm(CharmBase):
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
-    def set_peer_data_dict(self, bag, key: str, value: Dict) -> None:
+    def set_peer_data_dict(self, bag, key: str, value: dict) -> None:
         """Put a dict into the peer data bag if not there or different."""
         if not self.peers or not bag or not key:
             return
 
-        old_value: Dict = self.get_peer_data_dict(bag, key)
+        old_value: dict = self.get_peer_data_dict(bag, key)
         if old_value != value:
             self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
 
-    def set_peer_data_list(self, bag, key: str, value: List) -> None:
+    def set_peer_data_list(self, bag, key: str, value: list) -> None:
         """Put a list into the peer data bag if not there or different."""
         if not self.peers or not bag or not key:
             return
 
-        old_value: List = self.get_peer_data_list(bag, key)
+        old_value: list = self.get_peer_data_list(bag, key)
         if old_value != value:
             self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
 
