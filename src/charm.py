@@ -243,7 +243,7 @@ class LxdCharm(CharmBase):
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
-    def pop_peer_data_str(self, bag, key: str) -> Union[Dict, str]:
+    def pop_peer_data_str(self, bag, key: str) -> str:
         """Pop a str out of the peer data bag."""
         if not self.peers or not bag or not key:
             return ""
