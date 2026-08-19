@@ -69,6 +69,7 @@ SYSTEMD_TMPFILES_CONFIGS: List[str] = [
 ]
 
 REBOOT_REQUIRED_FILE: str = "/run/lxd-reboot-required"
+SUBPROCESS_TIMEOUT: int = 600
 
 
 class LxdCharm(CharmBase):
@@ -213,22 +214,22 @@ class LxdCharm(CharmBase):
         """Fetch the cluster relation."""
         return self.model.get_relation("cluster")
 
-    def get_peer_data_dict(self, bag, key: str) -> Dict:
+    def get_peer_data_dict(self, bag, key: str) -> dict:
         """Retrieve a dict from the peer data bag."""
         if not self.peers or not bag or not key:
             return {}
         value = json.loads(self.peers.data[bag].get(key, "{}"))
-        if isinstance(value, Dict):
+        if isinstance(value, dict):
             return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return {}
 
-    def get_peer_data_list(self, bag, key: str) -> List:
+    def get_peer_data_list(self, bag, key: str) -> list:
         """Retrieve a list from the peer data bag."""
         if not self.peers or not bag or not key:
             return []
         value = json.loads(self.peers.data[bag].get(key, "[]"))
-        if isinstance(value, List):
+        if isinstance(value, list):
             return value
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return []
@@ -243,7 +244,7 @@ class LxdCharm(CharmBase):
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
-    def pop_peer_data_str(self, bag, key: str) -> Union[Dict, str]:
+    def pop_peer_data_str(self, bag, key: str) -> str:
         """Pop a str out of the peer data bag."""
         if not self.peers or not bag or not key:
             return ""
@@ -253,21 +254,21 @@ class LxdCharm(CharmBase):
         logger.error(f"Invalid data pulled out from {bag.name}.get('{key}')")
         return ""
 
-    def set_peer_data_dict(self, bag, key: str, value: Dict) -> None:
+    def set_peer_data_dict(self, bag, key: str, value: dict) -> None:
         """Put a dict into the peer data bag if not there or different."""
         if not self.peers or not bag or not key:
             return
 
-        old_value: Dict = self.get_peer_data_dict(bag, key)
+        old_value: dict = self.get_peer_data_dict(bag, key)
         if old_value != value:
             self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
 
-    def set_peer_data_list(self, bag, key: str, value: List) -> None:
+    def set_peer_data_list(self, bag, key: str, value: list) -> None:
         """Put a list into the peer data bag if not there or different."""
         if not self.peers or not bag or not key:
             return
 
-        old_value: List = self.get_peer_data_list(bag, key)
+        old_value: list = self.get_peer_data_list(bag, key)
         if old_value != value:
             self.peers.data[bag][key] = json.dumps(value, separators=(",", ":"), sort_keys=True)
 
@@ -384,7 +385,12 @@ class LxdCharm(CharmBase):
     def _on_action_debug(self, event: ActionEvent) -> None:
         """Collect information for a bug report."""
         try:
-            b = subprocess.run(["lxd.buginfo"], capture_output=True, check=True, timeout=600)
+            b = subprocess.run(
+                ["lxd.buginfo"],
+                capture_output=True,
+                check=True,
+                timeout=SUBPROCESS_TIMEOUT,
+            )
         except subprocess.CalledProcessError as e:
             msg = f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})"
             event.fail(msg)
@@ -531,7 +537,7 @@ class LxdCharm(CharmBase):
                 self.kernel_sysctl()
             elif "kernel-hardening" in changed:
                 self.kernel_hardening()
-            elif [k for k in changed if k.startswith("snap-config-")]:
+            elif any(k.startswith("snap-config-") for k in changed):
                 self.snap_config_set()
         except RuntimeError:
             msg = "Failed to apply some configuration change(s): {}".format(", ".join(changed))
@@ -570,7 +576,7 @@ class LxdCharm(CharmBase):
         c = subprocess.run(
             ["systemd-detect-virt", "--quiet", "--container"],
             check=False,
-            timeout=600,
+            timeout=SUBPROCESS_TIMEOUT,
         )
         if c.returncode == 0:
             logger.debug(
@@ -1596,7 +1602,7 @@ class LxdCharm(CharmBase):
                     ["sysctl", "--quiet", "--load", sysctl_file],
                     capture_output=True,
                     check=True,
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
@@ -1633,7 +1639,7 @@ class LxdCharm(CharmBase):
                     ["systemd-tmpfiles", "--create"],
                     capture_output=True,
                     check=True,
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
             except subprocess.CalledProcessError as e:
                 if not self._stored.inside_container:
@@ -1691,7 +1697,7 @@ class LxdCharm(CharmBase):
                 capture_output=True,
                 check=True,
                 input=preseed_yaml,
-                timeout=600,
+                timeout=SUBPROCESS_TIMEOUT,
             )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
@@ -1817,7 +1823,7 @@ class LxdCharm(CharmBase):
                     capture_output=True,
                     check=True,
                     encoding="UTF-8",
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
@@ -2244,7 +2250,7 @@ class LxdCharm(CharmBase):
         c = subprocess.run(
             ["systemctl", "is-active", "--quiet", "snap.lxd.daemon.service"],
             check=False,
-            timeout=600,
+            timeout=SUBPROCESS_TIMEOUT,
         )
         return c.returncode == 0
 
@@ -2337,7 +2343,7 @@ class LxdCharm(CharmBase):
                 cmd,
                 capture_output=True,
                 check=True,
-                timeout=600,
+                timeout=SUBPROCESS_TIMEOUT,
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
@@ -2551,7 +2557,7 @@ class LxdCharm(CharmBase):
                 ["snap", "set", "lxd"] + snap_set_list,
                 capture_output=True,
                 check=True,
-                timeout=600,
+                timeout=SUBPROCESS_TIMEOUT,
             )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
@@ -2627,13 +2633,13 @@ class LxdCharm(CharmBase):
                     ["snap", "install", "lxd"] + channel + cohort,
                     capture_output=True,
                     check=True,
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
                 subprocess.run(
                     ["snap", "refresh", "lxd"] + channel + cohort,
                     capture_output=True,
                     check=True,
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
             else:
                 self.unit_maintenance("Installing LXD snap (using lxd-installer)")
@@ -2641,21 +2647,21 @@ class LxdCharm(CharmBase):
                     ["lxd", "version"],
                     capture_output=True,
                     check=True,
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
                 if cohort:
                     subprocess.run(
                         ["snap", "switch", "lxd"] + cohort,
                         capture_output=True,
                         check=True,
-                        timeout=600,
+                        timeout=SUBPROCESS_TIMEOUT,
                     )
             if os.path.exists("/var/lib/lxd"):
                 subprocess.run(
                     ["lxd.migrate", "-yes"],
                     capture_output=True,
                     check=True,
-                    timeout=600,
+                    timeout=SUBPROCESS_TIMEOUT,
                 )
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
@@ -2692,11 +2698,11 @@ class LxdCharm(CharmBase):
             enable = ["systemctl", "enable", "--now", "snap.lxd.daemon.unix.socket"]
 
         try:
-            subprocess.run(cmd, capture_output=True, check=True, timeout=600)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=SUBPROCESS_TIMEOUT)
             if alias:
-                subprocess.run(alias, capture_output=True, check=True, timeout=600)
+                subprocess.run(alias, capture_output=True, check=True, timeout=SUBPROCESS_TIMEOUT)
             if enable:
-                subprocess.run(enable, capture_output=True, check=True, timeout=600)
+                subprocess.run(enable, capture_output=True, check=True, timeout=SUBPROCESS_TIMEOUT)
         except subprocess.CalledProcessError as e:
             self.unit_blocked(f"Failed to run {e.cmd!r}: {e.stderr} ({e.returncode})")
             raise RuntimeError
