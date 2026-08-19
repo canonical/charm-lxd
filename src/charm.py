@@ -1427,7 +1427,7 @@ class LxdCharm(CharmBase):
         )
         logger.debug(
             f"Connection information put in {self.unit.name} "
-            "(cms-client-bound-address={bound_address})"
+            f"(cms-client-bound-address={bound_address})"
         )
 
     def _on_prometheus_manual_relation_changed(self, event: RelationChangedEvent) -> None:
