@@ -1278,7 +1278,7 @@ class LxdCharm(CharmBase):
             logger.error(f"Failed to set loki.api.url: {e}")
             return
 
-        logger.info(f"LXD is now streaming logs to Loki at {loki_api_url})")
+        logger.info(f"LXD is now streaming logs to Loki at {loki_api_url}")
 
     def _on_loki_push_api_endpoint_departed(self, event: RelationDepartedEvent):
         """Configure LXD to stop sending logs to Loki."""
@@ -1290,7 +1290,7 @@ class LxdCharm(CharmBase):
             conf = client.api.get().json()["metadata"]["config"]
             if conf.pop("loki.api.url", None):
                 client.api.put(json={"config": conf})
-                logger.info("LXD is no longer streaming logs to Loki)")
+                logger.info("LXD is no longer streaming logs to Loki")
         except pylxd.exceptions.LXDAPIException as e:
             logger.error(f"Failed to set loki.api.url: {e}")
             return
