@@ -2023,7 +2023,7 @@ class LxdCharm(CharmBase):
                     "job_data": {
                         "metrics_path": "/1.0/metrics",
                         "scheme": "https",
-                        "static_configs": [{"targets": self.metrics_target}],
+                        "static_configs": [{"targets": [self.metrics_target]}],
                         "tls_config": {
                             "insecure_skip_verify": True,
                         },
