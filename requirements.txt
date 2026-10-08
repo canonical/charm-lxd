@@ -1,6 +1,6 @@
-cosl >= 1.11.1
-ops >= 3.8.2
+cosl==1.11.2
+ops==3.9.0
 git+https://github.com/canonical/pylxd@main#egg=pylxd
-pyopenssl
-python-logging-loki
-pyyaml
+pyOpenSSL==26.4.0
+python-logging-loki==0.3.1
+PyYAML==6.0.3
