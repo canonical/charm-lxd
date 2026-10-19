@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -49,6 +50,26 @@ logger = logging.getLogger(__name__)
 
 # Reduce verbosity of API calls made by pylxd
 logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+def _normalize_pem(pem_data: str) -> str:
+    """Normalize PEM whitespace and wrap the encoded body for all PEM blocks."""
+    pattern = re.compile(
+        r"-----BEGIN (?P<label>[^-\r\n]+)-----\s*(?P<body>.*?)\s*-----END (?P=label)-----",
+        re.DOTALL,
+    )
+    blocks = []
+    for match in pattern.finditer(pem_data):
+        label = match.group("label")
+        body = "".join(match.group("body").split())
+        wrapped_body = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+        blocks.append(f"-----BEGIN {label}-----\n{wrapped_body}\n-----END {label}-----")
+
+    if not blocks:
+        return pem_data.strip() + "\n"
+
+    return "\n".join(blocks) + "\n"
+
 
 SYSCTL_CONFIGS: Dict[str, int] = {
     "fs.aio-max-nr": 524288,
@@ -727,27 +748,9 @@ class LxdCharm(CharmBase):
             logger.error(f"Missing ca, cert and/or key in {event.unit.name}")
             return
 
-        # The received PEMs needs to be mangled to be able to split()
-        # on spaces without breaking the "-----BEGIN CERTIFICATE-----"
-        # and "-----END CERTIFICATE-----" lines
-        ca = (
-            "\n".join(ca.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
-                "CERTIFICATE", " CERTIFICATE", 2
-            )
-            + "\n"
-        )
-        cert = (
-            "\n".join(cert.replace(" CERTIFICATE", "CERTIFICATE", 2).split()).replace(
-                "CERTIFICATE", " CERTIFICATE", 2
-            )
-            + "\n"
-        )
-        key = (
-            "\n".join(key.replace(" RSA PRIVATE KEY", "RSA_PRIVATE_KEY", 2).split()).replace(
-                "RSA_PRIVATE_KEY", " RSA PRIVATE KEY", 2
-            )
-            + "\n"
-        )
+        ca = _normalize_pem(ca)
+        cert = _normalize_pem(cert)
+        key = _normalize_pem(key)
 
         # Create the config dir if needed
         ovn_dir: str = "/var/snap/lxd/common/ovn"
