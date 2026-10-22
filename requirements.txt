@@ -1,4 +1,4 @@
-cosl==1.11.2
+cosl==1.11.3
 ops==3.9.0
 git+https://github.com/canonical/pylxd@main#egg=pylxd
 pyOpenSSL==26.4.0
