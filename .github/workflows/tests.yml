@@ -45,6 +45,9 @@ jobs:
     - name: Run linters
       run: tox -vve lint
 
+    - name: Run unit tests
+      run: tox -vve unit
+
   build:
     name: Build charms
     runs-on: ubuntu-24.04
