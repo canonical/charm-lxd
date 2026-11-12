@@ -1144,19 +1144,17 @@ class LxdCharm(CharmBase):
         # If the remote side is clustered, it will use the app bag
         # if not clustered, the unit bag will be used
         d: Dict = {}
-        bag = None
         for bag in (event.app, event.unit):
             if not bag:
                 continue
 
-            d = event.relation.data[bag]
+            d = dict(event.relation.data[bag])
             if d.get("version", "") == "1.0":
                 logger.debug(f"Valid version found in {bag.name}")
                 break
             else:
                 logger.error(f"Incompatible/missing version found in {bag.name}")
-
-        if not d or not bag:
+        else:
             logger.error("No compatible version found in any data bags")
             return
 

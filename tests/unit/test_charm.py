@@ -228,6 +228,56 @@ def test_config_changed_applies_all_changed_categories():
     event.defer.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("app_version", "unit_version", "expected_name"),
+    [("2.0", "2.0", None), ("1.0", "1.0", "client"), ("2.0", "1.0", "client/0")],
+)
+def test_https_relation_only_trusts_compatible_bags(app_version, unit_version, expected_name):
+    """Reject unsupported bags and prefer the app bag when it is compatible."""
+    app, unit = _Bag("client"), _Bag("client/0")
+    relation = SimpleNamespace(
+        data={
+            app: {"version": app_version, "certificate": "app-cert"},
+            unit: {"version": unit_version, "certificate": "unit-cert"},
+        }
+    )
+    local_unit, local_app = _Bag("lxd/0"), _Bag("lxd")
+    relation.data[local_unit] = {}
+    relation.data[local_app] = {}
+    trust_add = mock.Mock(return_value=True)
+    charm = _FakeCharm(
+        config={"mode": "standalone"},
+        _stored=SimpleNamespace(config={"lxd-listen-https": True}, lxd_clustered=False),
+        unit=local_unit,
+        app=local_app,
+        lxd_trust_fingerprint=mock.Mock(return_value=""),
+        lxd_trust_add=trust_add,
+    )
+    client = mock.Mock()
+    client.host_info = {
+        "environment": {
+            "server_version": "5.21",
+            "server_clustered": False,
+            "addresses": [],
+            "certificate": "server-cert",
+            "certificate_fingerprint": "fingerprint",
+        }
+    }
+
+    event: Any = SimpleNamespace(app=app, unit=unit, relation=relation)
+    with mock.patch("charm.pylxd.Client", return_value=client) as client_factory:
+        charm._on_https_relation_changed(event)
+
+    if expected_name is None:
+        client_factory.assert_not_called()
+        trust_add.assert_not_called()
+    else:
+        cert = "app-cert" if expected_name == "client" else "unit-cert"
+        trust_add.assert_called_once_with(
+            cert=cert, name=f"juju-relation-{expected_name}", projects=""
+        )
+
+
 def test_metrics_port_is_https_unless_metrics_listener_enabled():
     """The metrics port is the HTTPS port unless the dedicated metrics listener is on."""
     assert _charm_with_spaces({}).metrics_port == 8443
