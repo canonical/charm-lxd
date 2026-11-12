@@ -985,7 +985,7 @@ class LxdCharm(CharmBase):
             return
 
         # Lookup the hostname of the unit that left
-        hostname: str = members.pop(event.unit.name, "")
+        hostname: str = members.get(event.unit.name, "")
         if not hostname:
             logger.error(
                 f"Unable to find the hostname of {event.unit.name}, not removing from the cluster"
@@ -993,11 +993,18 @@ class LxdCharm(CharmBase):
             return
 
         # Remove it from the cluster
-        logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
-        self.lxd_cluster_remove(hostname)
+        logger.debug(f"Removing {event.unit.name} ({hostname}) from the cluster")
+        if not self.lxd_cluster_remove(hostname):
+            event.defer()
+            return
 
         # Save the updated cluster members list
+        members.pop(event.unit.name)
         self.set_peer_data_dict(self.app, "members", members)
+        if isinstance(self.unit.status, BlockedStatus) and self.unit.status.message.startswith(
+            f"Failed to remove {hostname} from the cluster: "
+        ):
+            self.unit_active()
         logger.info(f"The unit {event.unit.name} is no longer part of the cluster")
 
     def _on_grafana_dashboard_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -1767,7 +1774,7 @@ class LxdCharm(CharmBase):
         self._stored.lxd_clustered = True
         logger.debug("Cluster joined successfully (join token consumed)")
 
-    def lxd_cluster_remove(self, member: str) -> None:
+    def lxd_cluster_remove(self, member: str) -> bool:
         """Remove a member from the cluster.
 
         Check if the departing unit is actually a cluster member and then
@@ -1777,7 +1784,7 @@ class LxdCharm(CharmBase):
         try:
             if not client.cluster.enabled:
                 logger.debug(f"Clustering not enabled for {member}")
-                return
+                return True
         except AttributeError:
             logger.debug("pylxd is too old, the cluster.enabled attribute is missing")
 
@@ -1786,9 +1793,12 @@ class LxdCharm(CharmBase):
             m.delete()
         except pylxd.exceptions.NotFound:
             logger.debug(f"Not removing {member} from the cluster as it is not part of it")
-            return
+            return True
         except pylxd.exceptions.LXDAPIException as e:
             self.unit_blocked(f"Failed to remove {member} from the cluster: {e}")
+            return False
+
+        return True
 
     def lxd_generate_cert_key_pair(self, name: str) -> Tuple[str, str]:
         """Generate a certificate and key pair."""
