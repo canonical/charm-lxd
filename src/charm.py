@@ -2482,6 +2482,7 @@ class LxdCharm(CharmBase):
         tmp_dir: str = ""
         if lxd_snap_resource and tarfile.is_tarfile(lxd_snap_resource):
             logger.debug(f"{lxd_snap_resource} is a tarball; unpacking")
+            self._stored.lxd_snap_path = ""
             tmp_dir = tempfile.mkdtemp()
             tarball = tarfile.open(lxd_snap_resource)
             valid_names = {f"lxd_{x}{fname_suffix}" for x in possible_archs}
@@ -2498,9 +2499,10 @@ class LxdCharm(CharmBase):
 
         if self._stored.lxd_snap_path:
             self.snap_sideload_lxd()
-            if tmp_dir:
+        if tmp_dir:
+            if self._stored.lxd_snap_path:
                 os.remove(self._stored.lxd_snap_path)
-                os.rmdir(tmp_dir)
+            os.rmdir(tmp_dir)
 
         # LXD binary
         lxd_binary_resource: str = ""
@@ -2516,6 +2518,7 @@ class LxdCharm(CharmBase):
         tmp_dir = ""
         if lxd_binary_resource and tarfile.is_tarfile(lxd_binary_resource):
             logger.debug(f"{lxd_binary_resource} is a tarball; unpacking")
+            self._stored.lxd_binary_path = ""
             tmp_dir = tempfile.mkdtemp()
             tarball = tarfile.open(lxd_binary_resource)
             valid_names = {f"lxd_{x}{fname_suffix}" for x in possible_archs}
@@ -2532,9 +2535,10 @@ class LxdCharm(CharmBase):
 
         if self._stored.lxd_binary_path:
             self.snap_sideload_lxd_binary()
-            if tmp_dir:
+        if tmp_dir:
+            if self._stored.lxd_binary_path:
                 os.remove(self._stored.lxd_binary_path)
-                os.rmdir(tmp_dir)
+            os.rmdir(tmp_dir)
 
     def snap_config_set(self) -> None:
         """Apply snap set to LXD."""

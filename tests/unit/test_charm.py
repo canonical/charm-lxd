@@ -1,6 +1,9 @@
 """Unit tests for helpers and actions in `src/charm.py`."""
 
 import io
+import os
+import tarfile
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from email.message import Message
@@ -397,6 +400,55 @@ def test_cluster_departure_retry_clears_only_its_own_block(replacement_status):
         assert isinstance(unit.status, ActiveStatus)
     else:
         assert unit.status == replacement_status
+
+
+@pytest.mark.parametrize(
+    ("resource", "suffix", "path_attr", "method"),
+    [
+        ("lxd-snap", ".snap", "lxd_snap_path", "snap_sideload_lxd"),
+        ("lxd-binary", "", "lxd_binary_path", "snap_sideload_lxd_binary"),
+    ],
+)
+def test_sideload_tarball_without_arch_clears_previous_path(
+    tmp_path, resource, suffix, path_attr, method
+):
+    """A subsequent incompatible tarball must not reuse a deleted extracted file."""
+    matching = tmp_path / "matching.tar"
+    missing = tmp_path / "missing.tar"
+    for path, name in (
+        (matching, f"lxd_{os.uname().machine}{suffix}"),
+        (missing, f"lxd_unsupported-arch{suffix}"),
+    ):
+        with tarfile.open(path, "w") as archive:
+            info = tarfile.TarInfo(name)
+            info.size = 4
+            archive.addfile(info, io.BytesIO(b"data"))
+
+    resources = {resource: str(matching)}
+    stored = SimpleNamespace(lxd_snap_path="", lxd_binary_path="")
+    charm = _FakeCharm(
+        _stored=stored,
+        model=SimpleNamespace(
+            resources=SimpleNamespace(fetch=lambda name: resources.get(name, ""))
+        ),
+        snap_sideload_lxd=mock.Mock(),
+        snap_sideload_lxd_binary=mock.Mock(),
+    )
+    sideload = getattr(charm, method)
+    sideload.side_effect = lambda: (
+        os.path.isfile(getattr(stored, path_attr)) or pytest.fail("sideload path does not exist")
+    )
+    mkdtemp = tempfile.mkdtemp
+
+    with mock.patch("charm.tempfile.mkdtemp", side_effect=lambda: mkdtemp(dir=tmp_path)):
+        charm.resource_sideload()
+        assert not os.path.exists(getattr(stored, path_attr))
+        resources[resource] = str(missing)
+        charm.resource_sideload()
+
+    sideload.assert_called_once_with()
+    assert getattr(stored, path_attr) == ""
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["matching.tar", "missing.tar"]
 
 
 def test_metrics_port_is_https_unless_metrics_listener_enabled():
