@@ -1255,8 +1255,10 @@ class LxdCharm(CharmBase):
 
         # There can be multiple Loki endpoints but LXD only supports logging to
         # a single API URL, so pick the first.
-        loki_api_url = loki_endpoints[0]["url"]
+        self._configure_loki_endpoint(loki_endpoints[0]["url"])
 
+    def _configure_loki_endpoint(self, loki_api_url: str) -> None:
+        """Configure LXD to stream to a Loki endpoint."""
         # LXD assumes the Loki API URL only contains: protocol + name + port (optional)
         if loki_api_url.endswith("/loki/api/v1/push"):
             loki_api_url = loki_api_url[: -len("/loki/api/v1/push")]
@@ -1282,8 +1284,13 @@ class LxdCharm(CharmBase):
         logger.info(f"LXD is now streaming logs to Loki at {loki_api_url}")
 
     def _on_loki_push_api_endpoint_departed(self, event: RelationDepartedEvent):
-        """Configure LXD to stop sending logs to Loki."""
+        """Switch to a remaining Loki endpoint or stop sending logs."""
         logger.debug("Loki push API endpoint departed")
+
+        loki_endpoints = self._loki_consumer.loki_endpoints
+        if loki_endpoints:
+            self._configure_loki_endpoint(loki_endpoints[0]["url"])
+            return
 
         # Configuring LXD to stop streaming to Loki
         client = pylxd.Client()

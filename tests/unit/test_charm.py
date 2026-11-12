@@ -278,6 +278,41 @@ def test_https_relation_only_trusts_compatible_bags(app_version, unit_version, e
         )
 
 
+@pytest.mark.parametrize(
+    ("endpoints", "current_url", "expected_url", "writes"),
+    [
+        (
+            [{"url": "http://loki:3100/loki/api/v1/push"}],
+            "http://loki:3100",
+            "http://loki:3100",
+            False,
+        ),
+        (
+            [{"url": "http://other:3100/loki/api/v1/push"}],
+            "http://loki:3100",
+            "http://other:3100",
+            True,
+        ),
+        ([], "http://loki:3100", None, True),
+    ],
+)
+def test_loki_departure_updates_remaining_endpoint(endpoints, current_url, expected_url, writes):
+    """Keep or switch endpoints, and clear the URL only when none remain."""
+    charm = _FakeCharm(_loki_consumer=SimpleNamespace(loki_endpoints=endpoints))
+    client = mock.Mock()
+    client.has_api_extension.return_value = True
+    config = {"loki.api.url": current_url, "other": "value"}
+    client.api.get.return_value.json.return_value = {"metadata": {"config": config}}
+
+    event: Any = SimpleNamespace()
+    with mock.patch("charm.pylxd.Client", return_value=client):
+        charm._on_loki_push_api_endpoint_departed(event)
+
+    assert config.get("loki.api.url") == expected_url
+    assert config["other"] == "value"
+    assert client.api.put.call_count == int(writes)
+
+
 def test_metrics_port_is_https_unless_metrics_listener_enabled():
     """The metrics port is the HTTPS port unless the dedicated metrics listener is on."""
     assert _charm_with_spaces({}).metrics_port == 8443
