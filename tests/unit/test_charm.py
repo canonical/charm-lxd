@@ -183,6 +183,51 @@ def test_config_changed_reports_new_and_modified_keys_only():
     assert charm.config_changed() == {"snap-channel": "5.21/stable", "sysctl-tuning": True}
 
 
+def test_config_changed_applies_all_changed_categories():
+    """Apply every category included in a single configuration event."""
+    config = {
+        "snap-channel": "5.21/stable",
+        "sysctl-tuning": True,
+        "kernel-hardening": True,
+        "snap-config-foo": True,
+    }
+    stored = SimpleNamespace(config={}, addresses={}, reboot_required="false")
+    charm = _FakeCharm(
+        config=config,
+        _stored=stored,
+        juju_set_proxy=mock.Mock(),
+        _update_metrics_target=mock.Mock(),
+        lxd_update_prometheus_manual_scrape_job=mock.Mock(),
+        config_is_valid=mock.Mock(return_value=True),
+        system_clear_reboot_required=mock.Mock(),
+        unit_active=mock.Mock(),
+    )
+    for method, keys in (
+        ("snap_install_lxd", ["snap-channel"]),
+        ("kernel_sysctl", ["sysctl-tuning"]),
+        ("kernel_hardening", ["kernel-hardening"]),
+        ("snap_config_set", ["snap-config-foo"]),
+    ):
+        setattr(
+            charm,
+            method,
+            mock.Mock(
+                side_effect=lambda keys=keys: stored.config.update(
+                    {key: config[key] for key in keys}
+                )
+            ),
+        )
+    event: Any = SimpleNamespace(defer=mock.Mock())
+
+    with mock.patch("charm.os.path.exists", return_value=False):
+        charm._on_charm_config_changed(event)
+
+    for method in ("snap_install_lxd", "kernel_sysctl", "kernel_hardening", "snap_config_set"):
+        getattr(charm, method).assert_called_once_with()
+    assert charm.config_changed() == {}
+    event.defer.assert_not_called()
+
+
 def test_metrics_port_is_https_unless_metrics_listener_enabled():
     """The metrics port is the HTTPS port unless the dedicated metrics listener is on."""
     assert _charm_with_spaces({}).metrics_port == 8443

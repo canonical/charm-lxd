@@ -554,11 +554,11 @@ class LxdCharm(CharmBase):
         try:
             if "snap-channel" in changed:
                 self.snap_install_lxd()
-            elif "sysctl-tuning" in changed:
+            if "sysctl-tuning" in changed:
                 self.kernel_sysctl()
-            elif "kernel-hardening" in changed:
+            if "kernel-hardening" in changed:
                 self.kernel_hardening()
-            elif any(k.startswith("snap-config-") for k in changed):
+            if any(k.startswith("snap-config-") for k in changed):
                 self.snap_config_set()
         except RuntimeError:
             msg = "Failed to apply some configuration change(s): {}".format(", ".join(changed))
