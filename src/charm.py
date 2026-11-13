@@ -554,11 +554,11 @@ class LxdCharm(CharmBase):
         try:
             if "snap-channel" in changed:
                 self.snap_install_lxd()
-            elif "sysctl-tuning" in changed:
+            if "sysctl-tuning" in changed:
                 self.kernel_sysctl()
-            elif "kernel-hardening" in changed:
+            if "kernel-hardening" in changed:
                 self.kernel_hardening()
-            elif any(k.startswith("snap-config-") for k in changed):
+            if any(k.startswith("snap-config-") for k in changed):
                 self.snap_config_set()
         except RuntimeError:
             msg = "Failed to apply some configuration change(s): {}".format(", ".join(changed))
@@ -985,7 +985,7 @@ class LxdCharm(CharmBase):
             return
 
         # Lookup the hostname of the unit that left
-        hostname: str = members.pop(event.unit.name, "")
+        hostname: str = members.get(event.unit.name, "")
         if not hostname:
             logger.error(
                 f"Unable to find the hostname of {event.unit.name}, not removing from the cluster"
@@ -993,11 +993,18 @@ class LxdCharm(CharmBase):
             return
 
         # Remove it from the cluster
-        logger.debug(f"Removing {event.unit.name} ({hostname}) from members list")
-        self.lxd_cluster_remove(hostname)
+        logger.debug(f"Removing {event.unit.name} ({hostname}) from the cluster")
+        if not self.lxd_cluster_remove(hostname):
+            event.defer()
+            return
 
         # Save the updated cluster members list
+        members.pop(event.unit.name)
         self.set_peer_data_dict(self.app, "members", members)
+        if isinstance(self.unit.status, BlockedStatus) and self.unit.status.message.startswith(
+            f"Failed to remove {hostname} from the cluster: "
+        ):
+            self.unit_active()
         logger.info(f"The unit {event.unit.name} is no longer part of the cluster")
 
     def _on_grafana_dashboard_relation_changed(self, event: RelationChangedEvent) -> None:
@@ -1144,19 +1151,17 @@ class LxdCharm(CharmBase):
         # If the remote side is clustered, it will use the app bag
         # if not clustered, the unit bag will be used
         d: Dict = {}
-        bag = None
         for bag in (event.app, event.unit):
             if not bag:
                 continue
 
-            d = event.relation.data[bag]
+            d = dict(event.relation.data[bag])
             if d.get("version", "") == "1.0":
                 logger.debug(f"Valid version found in {bag.name}")
                 break
             else:
                 logger.error(f"Incompatible/missing version found in {bag.name}")
-
-        if not d or not bag:
+        else:
             logger.error("No compatible version found in any data bags")
             return
 
@@ -1257,8 +1262,10 @@ class LxdCharm(CharmBase):
 
         # There can be multiple Loki endpoints but LXD only supports logging to
         # a single API URL, so pick the first.
-        loki_api_url = loki_endpoints[0]["url"]
+        self._configure_loki_endpoint(loki_endpoints[0]["url"])
 
+    def _configure_loki_endpoint(self, loki_api_url: str) -> None:
+        """Configure LXD to stream to a Loki endpoint."""
         # LXD assumes the Loki API URL only contains: protocol + name + port (optional)
         if loki_api_url.endswith("/loki/api/v1/push"):
             loki_api_url = loki_api_url[: -len("/loki/api/v1/push")]
@@ -1284,8 +1291,13 @@ class LxdCharm(CharmBase):
         logger.info(f"LXD is now streaming logs to Loki at {loki_api_url}")
 
     def _on_loki_push_api_endpoint_departed(self, event: RelationDepartedEvent):
-        """Configure LXD to stop sending logs to Loki."""
+        """Switch to a remaining Loki endpoint or stop sending logs."""
         logger.debug("Loki push API endpoint departed")
+
+        loki_endpoints = self._loki_consumer.loki_endpoints
+        if loki_endpoints:
+            self._configure_loki_endpoint(loki_endpoints[0]["url"])
+            return
 
         # Configuring LXD to stop streaming to Loki
         client = pylxd.Client()
@@ -1762,7 +1774,7 @@ class LxdCharm(CharmBase):
         self._stored.lxd_clustered = True
         logger.debug("Cluster joined successfully (join token consumed)")
 
-    def lxd_cluster_remove(self, member: str) -> None:
+    def lxd_cluster_remove(self, member: str) -> bool:
         """Remove a member from the cluster.
 
         Check if the departing unit is actually a cluster member and then
@@ -1772,7 +1784,7 @@ class LxdCharm(CharmBase):
         try:
             if not client.cluster.enabled:
                 logger.debug(f"Clustering not enabled for {member}")
-                return
+                return True
         except AttributeError:
             logger.debug("pylxd is too old, the cluster.enabled attribute is missing")
 
@@ -1781,9 +1793,12 @@ class LxdCharm(CharmBase):
             m.delete()
         except pylxd.exceptions.NotFound:
             logger.debug(f"Not removing {member} from the cluster as it is not part of it")
-            return
+            return True
         except pylxd.exceptions.LXDAPIException as e:
             self.unit_blocked(f"Failed to remove {member} from the cluster: {e}")
+            return False
+
+        return True
 
     def lxd_generate_cert_key_pair(self, name: str) -> Tuple[str, str]:
         """Generate a certificate and key pair."""
@@ -2467,6 +2482,7 @@ class LxdCharm(CharmBase):
         tmp_dir: str = ""
         if lxd_snap_resource and tarfile.is_tarfile(lxd_snap_resource):
             logger.debug(f"{lxd_snap_resource} is a tarball; unpacking")
+            self._stored.lxd_snap_path = ""
             tmp_dir = tempfile.mkdtemp()
             tarball = tarfile.open(lxd_snap_resource)
             valid_names = {f"lxd_{x}{fname_suffix}" for x in possible_archs}
@@ -2483,9 +2499,10 @@ class LxdCharm(CharmBase):
 
         if self._stored.lxd_snap_path:
             self.snap_sideload_lxd()
-            if tmp_dir:
+        if tmp_dir:
+            if self._stored.lxd_snap_path:
                 os.remove(self._stored.lxd_snap_path)
-                os.rmdir(tmp_dir)
+            os.rmdir(tmp_dir)
 
         # LXD binary
         lxd_binary_resource: str = ""
@@ -2501,6 +2518,7 @@ class LxdCharm(CharmBase):
         tmp_dir = ""
         if lxd_binary_resource and tarfile.is_tarfile(lxd_binary_resource):
             logger.debug(f"{lxd_binary_resource} is a tarball; unpacking")
+            self._stored.lxd_binary_path = ""
             tmp_dir = tempfile.mkdtemp()
             tarball = tarfile.open(lxd_binary_resource)
             valid_names = {f"lxd_{x}{fname_suffix}" for x in possible_archs}
@@ -2517,9 +2535,10 @@ class LxdCharm(CharmBase):
 
         if self._stored.lxd_binary_path:
             self.snap_sideload_lxd_binary()
-            if tmp_dir:
+        if tmp_dir:
+            if self._stored.lxd_binary_path:
                 os.remove(self._stored.lxd_binary_path)
-                os.rmdir(tmp_dir)
+            os.rmdir(tmp_dir)
 
     def snap_config_set(self) -> None:
         """Apply snap set to LXD."""

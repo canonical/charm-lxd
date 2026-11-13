@@ -1,6 +1,9 @@
 """Unit tests for helpers and actions in `src/charm.py`."""
 
 import io
+import os
+import tarfile
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from email.message import Message
@@ -10,11 +13,13 @@ from unittest import mock
 from urllib.error import HTTPError, URLError
 
 import pytest
+import pylxd
 from charm import LxdCharm
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 
 SERVER_CRT = "/var/snap/lxd/common/lxd/server.crt"
 CLUSTER_CRT = "/var/snap/lxd/common/lxd/cluster.crt"
@@ -181,6 +186,269 @@ def test_config_changed_reports_new_and_modified_keys_only():
     )
 
     assert charm.config_changed() == {"snap-channel": "5.21/stable", "sysctl-tuning": True}
+
+
+def test_config_changed_applies_all_changed_categories():
+    """Apply every category included in a single configuration event."""
+    config = {
+        "snap-channel": "5.21/stable",
+        "sysctl-tuning": True,
+        "kernel-hardening": True,
+        "snap-config-foo": True,
+    }
+    stored = SimpleNamespace(config={}, addresses={}, reboot_required="false")
+    charm = _FakeCharm(
+        config=config,
+        _stored=stored,
+        juju_set_proxy=mock.Mock(),
+        _update_metrics_target=mock.Mock(),
+        lxd_update_prometheus_manual_scrape_job=mock.Mock(),
+        config_is_valid=mock.Mock(return_value=True),
+        system_clear_reboot_required=mock.Mock(),
+        unit_active=mock.Mock(),
+    )
+    for method, keys in (
+        ("snap_install_lxd", ["snap-channel"]),
+        ("kernel_sysctl", ["sysctl-tuning"]),
+        ("kernel_hardening", ["kernel-hardening"]),
+        ("snap_config_set", ["snap-config-foo"]),
+    ):
+        setattr(
+            charm,
+            method,
+            mock.Mock(
+                side_effect=lambda keys=keys: stored.config.update(
+                    {key: config[key] for key in keys}
+                )
+            ),
+        )
+    event: Any = SimpleNamespace(defer=mock.Mock())
+
+    with mock.patch("charm.os.path.exists", return_value=False):
+        charm._on_charm_config_changed(event)
+
+    for method in ("snap_install_lxd", "kernel_sysctl", "kernel_hardening", "snap_config_set"):
+        getattr(charm, method).assert_called_once_with()
+    assert charm.config_changed() == {}
+    event.defer.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("app_version", "unit_version", "expected_name"),
+    [("2.0", "2.0", None), ("1.0", "1.0", "client"), ("2.0", "1.0", "client/0")],
+)
+def test_https_relation_only_trusts_compatible_bags(app_version, unit_version, expected_name):
+    """Reject unsupported bags and prefer the app bag when it is compatible."""
+    app, unit = _Bag("client"), _Bag("client/0")
+    relation = SimpleNamespace(
+        data={
+            app: {"version": app_version, "certificate": "app-cert"},
+            unit: {"version": unit_version, "certificate": "unit-cert"},
+        }
+    )
+    local_unit, local_app = _Bag("lxd/0"), _Bag("lxd")
+    relation.data[local_unit] = {}
+    relation.data[local_app] = {}
+    trust_add = mock.Mock(return_value=True)
+    charm = _FakeCharm(
+        config={"mode": "standalone"},
+        _stored=SimpleNamespace(config={"lxd-listen-https": True}, lxd_clustered=False),
+        unit=local_unit,
+        app=local_app,
+        lxd_trust_fingerprint=mock.Mock(return_value=""),
+        lxd_trust_add=trust_add,
+    )
+    client = mock.Mock()
+    client.host_info = {
+        "environment": {
+            "server_version": "5.21",
+            "server_clustered": False,
+            "addresses": [],
+            "certificate": "server-cert",
+            "certificate_fingerprint": "fingerprint",
+        }
+    }
+
+    event: Any = SimpleNamespace(app=app, unit=unit, relation=relation)
+    with mock.patch("charm.pylxd.Client", return_value=client) as client_factory:
+        charm._on_https_relation_changed(event)
+
+    if expected_name is None:
+        client_factory.assert_not_called()
+        trust_add.assert_not_called()
+    else:
+        cert = "app-cert" if expected_name == "client" else "unit-cert"
+        trust_add.assert_called_once_with(
+            cert=cert, name=f"juju-relation-{expected_name}", projects=""
+        )
+
+
+@pytest.mark.parametrize(
+    ("endpoints", "current_url", "expected_url", "writes"),
+    [
+        (
+            [{"url": "http://loki:3100/loki/api/v1/push"}],
+            "http://loki:3100",
+            "http://loki:3100",
+            False,
+        ),
+        (
+            [{"url": "http://other:3100/loki/api/v1/push"}],
+            "http://loki:3100",
+            "http://other:3100",
+            True,
+        ),
+        ([], "http://loki:3100", None, True),
+    ],
+)
+def test_loki_departure_updates_remaining_endpoint(endpoints, current_url, expected_url, writes):
+    """Keep or switch endpoints, and clear the URL only when none remain."""
+    charm = _FakeCharm(_loki_consumer=SimpleNamespace(loki_endpoints=endpoints))
+    client = mock.Mock()
+    client.has_api_extension.return_value = True
+    config = {"loki.api.url": current_url, "other": "value"}
+    client.api.get.return_value.json.return_value = {"metadata": {"config": config}}
+
+    event: Any = SimpleNamespace()
+    with mock.patch("charm.pylxd.Client", return_value=client):
+        charm._on_loki_push_api_endpoint_departed(event)
+
+    assert config.get("loki.api.url") == expected_url
+    assert config["other"] == "value"
+    assert client.api.put.call_count == int(writes)
+
+
+@pytest.mark.parametrize("outcome", ["deleted", "missing", "disabled", "api-error"])
+def test_cluster_departure_preserves_members_until_removed(outcome):
+    """Keep peer data and defer on failure; clear it when deletion is complete."""
+    app = _Bag("lxd")
+    peers = SimpleNamespace(data=defaultdict(dict))
+    peers.data[app].update({"version": "1.0", "members": '{"lxd/1":"node-1"}'})
+    unit = SimpleNamespace(is_leader=mock.Mock(return_value=True), status=ActiveStatus())
+    unit_blocked = mock.Mock()
+    charm = _FakeCharm(
+        _stored=SimpleNamespace(lxd_clustered=True),
+        app=app,
+        unit=unit,
+        peers=peers,
+        unit_blocked=unit_blocked,
+    )
+    event: Any = SimpleNamespace(unit=_Bag("lxd/1"), defer=mock.Mock())
+    client = mock.Mock()
+    client.cluster.enabled = outcome != "disabled"
+    response = mock.Mock(status_code=500)
+    response.json.return_value = {"error": "API failure"}
+    if outcome == "missing":
+        client.cluster.members.get.side_effect = pylxd.exceptions.NotFound(response)
+    elif outcome == "api-error":
+        client.cluster.members.get.return_value.delete.side_effect = (
+            pylxd.exceptions.LXDAPIException(response)
+        )
+
+    with mock.patch("charm.pylxd.Client", return_value=client):
+        charm._on_cluster_relation_departed(event)
+
+    if outcome == "api-error":
+        assert charm.get_peer_data_dict(app, "members") == {"lxd/1": "node-1"}
+        unit_blocked.assert_called_once()
+        event.defer.assert_called_once_with()
+    else:
+        assert charm.get_peer_data_dict(app, "members") == {}
+        event.defer.assert_not_called()
+        unit_blocked.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "replacement_status",
+    [
+        None,
+        BlockedStatus("An unrelated problem"),
+        BlockedStatus("Failed to remove node-2 from the cluster: API failure"),
+        MaintenanceStatus("Performing maintenance"),
+    ],
+)
+def test_cluster_departure_retry_clears_only_its_own_block(replacement_status):
+    """A successful retry clears its removal failure but preserves unrelated statuses."""
+    app = _Bag("lxd")
+    peers = SimpleNamespace(data=defaultdict(dict))
+    peers.data[app].update({"version": "1.0", "members": '{"lxd/1":"node-1"}'})
+    unit = SimpleNamespace(is_leader=mock.Mock(return_value=True), status=ActiveStatus())
+    charm = _FakeCharm(
+        _stored=SimpleNamespace(lxd_clustered=True), app=app, unit=unit, peers=peers
+    )
+    event: Any = SimpleNamespace(unit=_Bag("lxd/1"), defer=mock.Mock())
+    client = mock.Mock()
+    client.cluster.enabled = True
+    response = mock.Mock(status_code=500)
+    response.json.return_value = {"error": "API failure"}
+    client.cluster.members.get.return_value.delete.side_effect = [
+        pylxd.exceptions.LXDAPIException(response),
+        None,
+    ]
+
+    with mock.patch("charm.pylxd.Client", return_value=client):
+        charm._on_cluster_relation_departed(event)
+        assert isinstance(unit.status, BlockedStatus)
+        assert charm.get_peer_data_dict(app, "members") == {"lxd/1": "node-1"}
+        if replacement_status is not None:
+            unit.status = replacement_status
+        charm._on_cluster_relation_departed(event)
+
+    event.defer.assert_called_once_with()
+    assert charm.get_peer_data_dict(app, "members") == {}
+    if replacement_status is None:
+        assert isinstance(unit.status, ActiveStatus)
+    else:
+        assert unit.status == replacement_status
+
+
+@pytest.mark.parametrize(
+    ("resource", "suffix", "path_attr", "method"),
+    [
+        ("lxd-snap", ".snap", "lxd_snap_path", "snap_sideload_lxd"),
+        ("lxd-binary", "", "lxd_binary_path", "snap_sideload_lxd_binary"),
+    ],
+)
+def test_sideload_tarball_without_arch_clears_previous_path(
+    tmp_path, resource, suffix, path_attr, method
+):
+    """A subsequent incompatible tarball must not reuse a deleted extracted file."""
+    matching = tmp_path / "matching.tar"
+    missing = tmp_path / "missing.tar"
+    for path, name in (
+        (matching, f"lxd_{os.uname().machine}{suffix}"),
+        (missing, f"lxd_unsupported-arch{suffix}"),
+    ):
+        with tarfile.open(path, "w") as archive:
+            info = tarfile.TarInfo(name)
+            info.size = 4
+            archive.addfile(info, io.BytesIO(b"data"))
+
+    resources = {resource: str(matching)}
+    stored = SimpleNamespace(lxd_snap_path="", lxd_binary_path="")
+    charm = _FakeCharm(
+        _stored=stored,
+        model=SimpleNamespace(
+            resources=SimpleNamespace(fetch=lambda name: resources.get(name, ""))
+        ),
+        snap_sideload_lxd=mock.Mock(),
+        snap_sideload_lxd_binary=mock.Mock(),
+    )
+    sideload = getattr(charm, method)
+    sideload.side_effect = lambda: (
+        os.path.isfile(getattr(stored, path_attr)) or pytest.fail("sideload path does not exist")
+    )
+    mkdtemp = tempfile.mkdtemp
+
+    with mock.patch("charm.tempfile.mkdtemp", side_effect=lambda: mkdtemp(dir=tmp_path)):
+        charm.resource_sideload()
+        assert not os.path.exists(getattr(stored, path_attr))
+        resources[resource] = str(missing)
+        charm.resource_sideload()
+
+    sideload.assert_called_once_with()
+    assert getattr(stored, path_attr) == ""
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["matching.tar", "missing.tar"]
 
 
 def test_metrics_port_is_https_unless_metrics_listener_enabled():
